@@ -2,44 +2,79 @@
 
 > 具身机器人的确定性之眼
 
-**定位**：面向 NVIDIA DRIVE AGX Thor 平台的高性能双目视觉模组，专注于透明物体、逆光、运动畸变等具身机器人典型难点场景。
+**定位**：面向具身机器人的高性能双目视觉模组，专注于透明物体、逆光、运动畸变等典型难点场景。
 
 **核心特性**：
-- 在线自标定（Thor平台<1秒收敛）
-- 帧级别置信度热力图
+- 在线自标定（Thor平台GPU加速，<1秒收敛）
+- 帧级置信度热力图（0.0~1.0，下游决策友好）
 - IMU紧耦合运动畸变校正
-- 开放 ROS2 Humble/Jazzy 驱动源码
+- 开放 ROS2 Humble/Jazzy 驱动源码（MIT License）
 
-## 项目结构
+## 硬件规格
+
+| 参数 | 值 |
+|------|-----|
+| Sensor | Sony IMX678 × 2 (4K/30fps) |
+| 基线 | 80mm |
+| IMU | Bosch BMI088 (6轴，车规) |
+| 接口 | FPD-Link III → CSI-2 |
+| 深度范围 | 0.1m ~ 10m |
+| 目标BOM成本 | ¥680 (1K量) |
+
+## 目录结构
 
 ```
 embodied_vision/
 ├── src/
-│   ├── stereo_vision_driver/     # ROS2 驱动包
-│   └── stereo_vision_calibration/ # 标定工具
-├── hardware/                      # 硬件设计（待补充）
-├── docs/                         # 文档
-└── scripts/                      # 构建脚本
+│   ├── stereo_vision_driver/        # ROS2 驱动包
+│   │   ├── include/stereo_vision/  # C++ API
+│   │   ├── hardware/               # V4L2 + BMI088 硬件抽象
+│   │   ├── msg/                    # ROS2 消息定义
+│   │   ├── launch/                 # 启动文件
+│   │   └── config/                # 参数配置
+│   └── stereo_vision_calibration/  # 标定工具
+├── docs/                            # 文档
+├── scripts/                        # 构建脚本
+└── hardware/                       # 硬件设计（待补充）
 ```
 
 ## 快速开始
 
-### 依赖
-
-- ROS2 Humble 或 Jazzy
-- NVIDIA DRIVE AGX Thor (或 Jetson Orin 作为开发替代)
-- CUDA 12+
-- Python 3.10+
-
 ### 构建
 
 ```bash
-cd src/stereo_vision_driver
+# ROS2 工作空间
+cd ~/embodied_vision_ws
 colcon build --merge-install
 source install/setup.bash
+```
 
-# 运行驱动
-ros2 launch stereo_vision_driver driver.launch.py
+### 模拟器模式（无硬件）
+
+```bash
+ros2 launch stereo_vision_driver driver.launch.py simulator:=true
+```
+
+### 真实硬件模式
+
+```bash
+ros2 launch stereo_vision_driver driver.launch.py publish_hz:=10
+```
+
+### 订阅话题
+
+```bash
+# 深度图 (米)
+ros2 topic echo /stereo_camera_node/depth
+
+# 置信度图 (0.0~1.0)
+ros2 topic echo /stereo_camera_node/confidence
+
+# 左目图像
+ros2 topic echo /stereo_camera_node/left/image_rect
+
+# IMU
+ros2 topic echo /stereo_camera_node/imu
 ```
 
 ## 核心API
@@ -47,26 +82,40 @@ ros2 launch stereo_vision_driver driver.launch.py
 ```cpp
 #include <stereo_vision/stereo_camera.hpp>
 
-auto cam = StereoCamera::create(config, node);
-auto frame = cam->grabFrame(100);  // 100ms 超时
+// 创建设备（默认配置即可）
+auto cam = StereoCamera::create();
 
-// 帧数据包含：
-//   - depth_m         深度图（米）
-//   - confidence      置信度图（0.0~1.0）
-//   - disparity       视差图（像素）
-//   - metadata        元数据（运动状态/温度/标定状态）
+// 获取一帧（含所有数据）
+auto frame = cam->grabFrame(100);  // 100ms超时
+
+// 使用置信度掩码
+auto mask = confidenceMask(frame->confidence, ConfidenceLevel::HIGH);
+auto safe_depth = cv::Mat();
+cv::bitwise_and(frame->depth_m, mask, safe_depth);
+
+// 触发在线标定
+cam->triggerRecalibration();
 ```
+
+## 置信度等级
+
+| 等级 | 阈值 | 适用场景 |
+|------|------|---------|
+| 极高 | ≥0.85 | 精密操作（抓取）|
+| 高 | ≥0.65 | 导航避障 |
+| 中 | ≥0.40 | 语义感知 |
+| 低 | >0 | VIO融合（降权）|
+| 无效 | =0 | 传感器失效 |
 
 ## 文档
 
-- [API参考](docs/api_reference/)
 - [开发者指南](docs/developer_guide/)
+- [API参考](docs/api_reference/)
 - [硬件规格](docs/hardware/)
 
-## 社区
+## 构建状态
 
-- GitHub Issues：Bug报告和功能请求
-- ROS2 生态项目欢迎提交 PR
+![CI](https://github.com/Terrytan008/embodied_vision/actions/workflows/ci.yml/badge.svg)
 
 ## 开源许可
 
@@ -75,4 +124,4 @@ auto frame = cam->grabFrame(100);  // 100ms 超时
 
 ---
 
-*本模组专为具身机器人设计，以"决策可信度"而非"物理精度"为核心设计哲学。*
+*以"决策可信度"而非"物理精度"为核心设计哲学*

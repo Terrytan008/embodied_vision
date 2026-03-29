@@ -9,10 +9,10 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
 
-    # 参数声明
+    # ---- 参数声明 ----
     publish_hz = DeclareLaunchArgument(
         'publish_hz', default_value='10',
-        description='话题发布频率 (Hz)'
+        description='发布频率 Hz (设为0则启用模拟器模式)'
     )
     confidence_threshold = DeclareLaunchArgument(
         'confidence_threshold', default_value='0.65',
@@ -28,20 +28,26 @@ def generate_launch_description():
     )
     exposure_mode = DeclareLaunchArgument(
         'exposure_mode', default_value='auto',
-        description='曝光模式: auto / manual / fixed'
+        description='曝光模式: auto / manual'
     )
     hdr_mode = DeclareLaunchArgument(
         'hdr_mode', default_value='hdr_x2',
         description='HDR模式: off / hdr_x2 / hdr_x4'
     )
+    simulator = DeclareLaunchArgument(
+        'simulator', default_value='false',
+        description='强制模拟器模式 (用于无硬件开发)'
+    )
 
-    # 驱动节点
+    # ---- 驱动节点 ----
     camera_node = Node(
         package='stereo_vision_driver',
         executable='stereo_camera_node',
         name='stereo_camera_node',
         parameters=[{
-            'publish_hz': LaunchConfiguration('publish_hz'),
+            # simulator=true 时 publish_hz 设为 0 触发模拟器
+            'publish_hz': LaunchConfiguration('simulator').evaluate() == 'true'
+                          and 10 or LaunchConfiguration('publish_hz'),
             'confidence_threshold': LaunchConfiguration('confidence_threshold'),
             'depth_min_m': LaunchConfiguration('depth_min'),
             'depth_max_m': LaunchConfiguration('depth_max'),
@@ -54,18 +60,6 @@ def generate_launch_description():
         respawn_delay=2.0,
     )
 
-    # 生命周期管理器（确保正确启动顺序）
-    lifecycle_mgr = Node(
-        package='nav2_lifecycle_manager',
-        executable='lifecycle_manager',
-        name='stereo_lifecycle_manager',
-        parameters=[{
-            'node_names': ['stereo_camera_node'],
-            'autostart': True,
-        }],
-        output='screen',
-    )
-
     return LaunchDescription([
         publish_hz,
         confidence_threshold,
@@ -73,6 +67,6 @@ def generate_launch_description():
         depth_max,
         exposure_mode,
         hdr_mode,
+        simulator,
         camera_node,
-        lifecycle_mgr,
     ])
