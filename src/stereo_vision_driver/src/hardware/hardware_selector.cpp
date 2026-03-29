@@ -3,9 +3,14 @@
 //
 // 自动检测当前平台，返回最适合的 Capture 实现：
 //   NVIDIA DRIVE/Jetson (Linux tegra) → NvMediaCaptureDevice
-//   其他 Linux / 模拟器          → V4L2CaptureDevice
+//   其他 Linux / 模拟器               → V4L2CaptureDevice
 
 #include "stereo_vision/hardware/capture_base.hpp"
+#include "stereo_vision/hardware/v4l2_capture.hpp"
+
+#ifdef ENABLE_NVMEDIA
+#include "stereo_vision/hardware/nv_nvmedia_capture.hpp"
+#endif
 
 #include <fstream>
 #include <cstring>
