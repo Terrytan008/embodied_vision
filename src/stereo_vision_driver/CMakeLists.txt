@@ -22,6 +22,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 # ---------- 核心库（独立，无ROS依赖）----------
 add_library(stereo_vision_core STATIC
     src/stereo_camera_impl.cpp
+    src/stereo_depth.cpp
     src/hardware/nv_csi_capture.cpp
     src/hardware/imu_bmi088.cpp
     src/hardware/hardware_factory.cpp

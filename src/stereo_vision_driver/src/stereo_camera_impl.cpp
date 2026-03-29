@@ -11,6 +11,9 @@
 #include <thread>
 #include <cstring>
 
+// SGBM 深度计算引擎
+#include "stereo_depth.cpp"
+
 namespace stereo_vision {
 
 using namespace hardware;
@@ -40,6 +43,10 @@ public:
     std::atomic<bool> running_{false};
     std::mutex frame_mutex_;
     FrameData current_frame_;
+
+    // ---- SGBM 深度引擎 ----
+    SGBMDepthHelper* depth_engine_ = nullptr;
+    std::unique_ptr<SGBMDepthHelper> depth_engine_owner_;
 
     // ---- IMU缓冲 ----
     std::mutex imu_mutex_;
@@ -88,6 +95,22 @@ public:
             RCLCPP_INFO(rclcpp::get_logger("StereoCamera"), "模拟器模式");
             return true;
         }
+
+        // ---- 初始化 SGBM 深度引擎 ----
+        SGBMDepthEngine::Params sgbm_params;
+        sgbm_params.num_disparities = 128;
+        sgbm_params.block_size = 7;
+        sgbm_params.P1 = 8 * 7 * 7;
+        sgbm_params.P2 = 32 * 7 * 7;
+        sgbm_params.min_confidence = config.confidence_threshold;
+        sgbm_params.uniqueness_ratio = 15;
+        sgbm_params.speckle_window_size = 100;
+        sgbm_params.speckle_range = 32;
+        sgbm_params.confidence_mode = SGBMDepthEngine::Params::ConfidenceMode::Combined;
+
+        depth_engine_owner_ = std::make_unique<SGBMDepthHelper>(sgbm_params);
+        depth_engine_ = depth_engine_owner_.get();
+        RCLCPP_INFO(rclcpp::get_logger("StereoCamera"), "SGBM 深度引擎已初始化");
 
         // ---- 创建左目录制设备 ----
         // TODO: 替换为 V4L2CaptureDevice 直接实例化
@@ -235,11 +258,63 @@ StereoCamera::create(const CameraConfig& config, void* node_base) {
 
         std::unique_ptr<FrameData> realGrabFrame(uint32_t) {
             auto frame = std::make_unique<FrameData>();
-            // TODO: 调用真实硬件获取帧
-            // 这里需要V4L2采集线程和同步机制
+
+            // TODO: 从V4L2采集线程获取真实左右目图像
+            // 这里先用占位图像，实际会从 capture_loop_ 同步获取
+            //
+            // 真实流程：
+            // 1. V4L2 captureLoop() 将左右帧写入 left_buffer_, right_buffer_
+            // 2. 本方法从共享内存读取，并运行 SGBM
+            //
+            // 目前输出空白帧（待硬件对接后填充）
+
+            // ---- 填充标定信息 ----
+            CalibrationData calib = getCalibration();
+
+            // ---- 如果有左右目图像，进行深度计算 ----
+            if (!left_raw.empty() && !right_raw.empty() && depth_engine_) {
+                cv::Mat depth_m, confidence, disparity;
+                if (impl_->imu_available_.load()) {
+                    IMUData imu;
+                    {
+                        std::lock_guard<std::mutex> lock(impl_->imu_mutex_);
+                        imu = impl_->current_imu_;
+                    }
+                    depth_engine_->computeWithIMU(
+                        left_raw, right_raw, calib, imu,
+                        depth_m, confidence, disparity
+                    );
+                } else {
+                    depth_engine_->compute(
+                        left_raw, right_raw, calib,
+                        depth_m, confidence, disparity
+                    );
+                }
+
+                // 物理安全性检查
+                if (!validateDepthSafety(depth_m)) {
+                    impl_->last_error_ = {
+                        StereoError::SYNC_LOST,
+                        "Depth validation failed - physics impossibility detected",
+                        std::chrono::steady_clock::now().time_since_epoch().count(),
+                        true, false
+                    };
+                    depth_m.setTo(0.0f);
+                    confidence.setTo(0.0f);
+                }
+
+                frame->depth_m = depth_m;
+                frame->confidence = confidence;
+                frame->disparity = disparity;
+            }
+
             impl_->frame_count_++;
             return frame;
         }
+
+        // 左右目原始图像缓冲（由采集线程填充）
+        cv::Mat left_raw;
+        cv::Mat right_raw;
 
         DeviceStatus getStatus() const override {
             DeviceStatus s;
