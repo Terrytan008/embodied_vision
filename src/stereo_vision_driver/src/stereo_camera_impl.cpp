@@ -4,15 +4,13 @@
 #include "stereo_vision/stereo_camera.hpp"
 #include "stereo_vision/hardware/capture_base.hpp"
 #include "stereo_vision/hardware/camera_types.hpp"
+#include "stereo_vision/stereo_depth.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 
 #include <chrono>
 #include <thread>
 #include <cstring>
-
-// SGBM 深度计算引擎
-#include "stereo_depth.cpp"
 
 namespace stereo_vision {
 
@@ -89,6 +87,11 @@ public:
         hw_config_.i2c_bus = "/dev/i2c-1";
         hw_config_.deserializer_addr = 0x40;
 
+        // ---- 自动选择硬件后端 ----
+        std::string platform_info = hardware::getPlatformInfo();
+        RCLCPP_INFO(rclcpp::get_logger("StereoCamera"),
+                    "平台: %s", platform_info.c_str());
+
         // 模拟模式检测
         if (config.publish_hz == 0) {
             hw_config_.simulator_mode = true;
@@ -112,12 +115,25 @@ public:
         depth_engine_ = depth_engine_owner_.get();
         RCLCPP_INFO(rclcpp::get_logger("StereoCamera"), "SGBM 深度引擎已初始化");
 
-        // ---- 创建左目录制设备 ----
-        // TODO: 替换为 V4L2CaptureDevice 直接实例化
-        RCLCPP_INFO(rclcpp::get_logger("StereoCamera"), "左目录制设备初始化...");
+        // ---- 创建左目录制设备（自动选择 V4L2 或 NvMedia）----
+        capture_left_ = hardware::createCaptureDevice(hw_config_, "auto");
+        if (!capture_left_ || !capture_left_->open(hw_config_)) {
+            RCLCPP_ERROR(rclcpp::get_logger("StereoCamera"),
+                        "左目录制设备初始化失败");
+            capture_left_.reset();
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("StereoCamera"),
+                        "左目录制设备: %s",
+                        capture_left_->getVersion().c_str());
+        }
 
         // ---- 创建右目录制设备 ----
-        RCLCPP_INFO(rclcpp::get_logger("StereoCamera"), "右目录制设备初始化...");
+        capture_right_ = hardware::createCaptureDevice(hw_config_, "auto");
+        if (!capture_right_ || !capture_right_->open(hw_config_)) {
+            RCLCPP_WARN(rclcpp::get_logger("StereoCamera"),
+                        "右目录制设备初始化失败（单目模式继续）");
+            capture_right_.reset();
+        }
 
         // ---- 创建 IMU ----
         imu_ = std::make_unique<BMI088Driver>();
