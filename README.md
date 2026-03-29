@@ -21,22 +21,16 @@
 | 深度范围 | 0.1m ~ 10m |
 | 目标BOM成本 | ¥680 (1K量) |
 
-## 目录结构
+## 核心模块
 
-```
-embodied_vision/
-├── src/
-│   ├── stereo_vision_driver/        # ROS2 驱动包
-│   │   ├── include/stereo_vision/  # C++ API
-│   │   ├── hardware/               # V4L2 + BMI088 硬件抽象
-│   │   ├── msg/                    # ROS2 消息定义
-│   │   ├── launch/                 # 启动文件
-│   │   └── config/                # 参数配置
-│   └── stereo_vision_calibration/  # 标定工具
-├── docs/                            # 文档
-├── scripts/                        # 构建脚本
-└── hardware/                       # 硬件设计（待补充）
-```
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| **SGBM深度计算** | `stereo_depth.cpp` | Semi-Global Matching + 置信度估计 |
+| **置信度NN模型** | `train_confidence.py` | 轻量CNN训练 pipeline |
+| **ONNX导出** | `export_onnx.py` | PyTorch→ONNX→TensorRT |
+| **C++推理** | `confidence_onnx.cpp` | ONNXRuntime推理引擎 |
+| **V4L2捕获** | `nv_csi_capture.cpp` | CSI-2 视频采集 |
+| **BMI088 IMU** | `imu_bmi088.cpp` | IMU驱动 |
 
 ## 快速开始
 
