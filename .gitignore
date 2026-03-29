@@ -1,0 +1,40 @@
+# Embodied Vision .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# ROS2
+install/
+log/
+build/
+*.swp
+*.swo
+.*.swo
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build logs
+*.log
+
+# Calibration data（包含真实相机数据，勿上传）
+*.bag
+*.mcap
+
+# Confidential docs
+secrets/
+credentials/
+*.pem
+*.key

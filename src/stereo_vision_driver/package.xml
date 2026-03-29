@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>stereo_vision_driver</name>
+  <version>0.1.0</version>
+  <description>
+    Embodied Vision 双目视觉模组 ROS2 驱动
+    
+    特性：
+    - 在线自标定（Thor平台GPU加速）
+    - 帧级置信度热力图
+    - IMU紧耦合运动畸变校正
+    - ROS2 Humble/Jazzy 原生支持
+  </description>
+  <maintainer email="contact@embodiedvision.com">Embodied Vision Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake_auto</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <!-- ROS2 核心依赖 -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>image_transport</depend>
+  <depend>cv_bridge</depend>
+
+  <!-- 图像处理 -->
+  <depend>image_geometry</depend>
+  <depend>opencv4</depend>
+
+  <!-- 消息定义 -->
+  <depend>stereo_vision_msgs</depend>
+
+  <!-- 测试 -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

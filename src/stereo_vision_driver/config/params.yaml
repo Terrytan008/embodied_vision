@@ -1,0 +1,26 @@
+# Embodied Vision — 默认参数配置
+# params.yaml
+
+/**:
+  ros__parameters:
+    # 发布频率
+    publish_hz: 10
+
+    # 深度范围
+    depth_min_m: 0.1
+    depth_max_m: 10.0
+
+    # 置信度阈值
+    # 0.65 = 高置信，适合导航避障
+    # 0.85 = 极高置信，适合精密操作
+    confidence_threshold: 0.65
+
+    # 曝光模式: auto / manual / fixed
+    exposure_mode: "auto"
+
+    # HDR模式: off / hdr_x2 / hdr_x4
+    hdr_mode: "hdr_x2"
+
+    # 手动曝光参数（exposure_mode=manual时生效）
+    exposure_time_us: 33333   # 微秒，30fps对应约33333us
+    analog_gain_db: 0.0       # dB

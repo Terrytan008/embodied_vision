@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 ROS2 Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: 安装依赖
+        run: |
+          source /opt/ros/humble/setup.bash
+          sudo apt update
+          sudo apt install -y \
+            python3-colcon-common-extensions \
+            python3-pip \
+            libopencv-dev \
+            python3-opencv \
+            python3-numpy
+
+      - name: 构建
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+      - name: 运行 linter
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon test --merge-install --event-handlers console_direct+ --cmake-args -DCMAKE_BUILD_TYPE=Release
+          colcon test-result --verbose
+
+  python-lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python Lint
+        run: |
+          pip install flake8 pyflakes
+          flake8 src/stereo_vision_calibration/scripts/ --max-line-length=120
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 构建文档
+        run: |
+          pip install sphinx sphinx-rtd-theme
+          # 文档构建命令（待实现）
+          echo "文档构建占位"
