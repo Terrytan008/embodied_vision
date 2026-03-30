@@ -6,23 +6,26 @@
 
 #pragma once
 
+#include <onnxruntime_cxx_api.h>
+#include <opencv2/opencv.hpp>
 #include <string>
 #include <memory>
-#include <opencv2/opencv.hpp>
+#include <array>
+#include <vector>
 
 namespace stereo_vision {
 
 /**
  * @brief ONNX Runtime 置信度推理引擎
  *
- * 使用训练好的轻量 CNN 对每像素预测置信度 (0.0~1.0)
- * 输入: 左目灰度图 + 右目灰度图 + 视差图
+ * 加载训练好的轻量 CNN 模型，执行置信度预测 (0.0~1.0)
+ * 输入: 左目灰度图 + 右目灰度图 + 视差图 (3通道)
  * 输出: 每像素置信度图
  */
 class ConfidenceInference {
 public:
     struct Config {
-        std::string model_path;
+        std::string model_path;       // ONNX 模型路径
         int img_height = 384;
         int img_width = 1280;
         float confidence_threshold = 0.65f;
@@ -30,8 +33,8 @@ public:
         int gpu_id = 0;
     };
 
-    ConfidenceInference() = default;
-    ~ConfidenceInference() = default;
+    ConfidenceInference();
+    ~ConfidenceInference();
 
     bool initialize(const Config& config);
 
@@ -46,11 +49,21 @@ public:
                   const cv::Mat& right,
                   const cv::Mat& disparity);
 
-    std::string getProvider() const { return provider_; }
+    std::string getVersion() const { return version_; }
 
 private:
     Config config_;
     std::string provider_ = "CPU";
+    std::string version_;
+
+    // ONNX Runtime
+    static Ort::Env env_;
+    Ort::SessionOptions session_options_;
+    std::unique_ptr<Ort::Session> session_;
+    Ort::AllocatorWithDefaultOptions allocator_;
+    std::string input_name_;
+    std::string output_name_;
+    size_t input_size_ = 0;
 };
 
 }  // namespace stereo_vision
