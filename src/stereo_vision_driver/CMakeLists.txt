@@ -92,10 +92,6 @@ rclcpp_components_register_node(stereo_vision_core
 
 # ========== 测试 ----------
 if(BUILD_TESTING)
-    find_package(ament_lint_auto REQUIRED)
-    ament_lint_auto_find_test_dependencies()
-
-    # GTest 单元测试
     find_package(GTest QUIET)
     if(GTest_FOUND)
         enable_testing()
@@ -107,7 +103,6 @@ if(BUILD_TESTING)
             include/stereo_vision
             ${OpenCV_INCLUDE_DIRS}
         )
-        # 链接完整库（包含 SGBM + ONNX 置信度）
         target_link_libraries(test_stereo_depth
             stereo_vision_core
             ${OpenCV_LIBS}
