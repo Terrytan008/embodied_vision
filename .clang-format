@@ -1,0 +1,12 @@
+---
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 120
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+PointerAlignment: Left
+NamespaceIndentation: None
+SpacesInParentheses: false
+SpacesInAngles: false

@@ -233,103 +233,132 @@ class StereoCalibrator:
 # =============================================================================
 # numba JIT 加速：BA 残差 + Jacobian 计算
 # =============================================================================
+
+def _project_point_ortho(objp_row, params):
+    """单个点的正交投影 (u,v) = (fx*Xp/Zp + cx, fy*Yp/Zp + cy)"""
+    rx, ry, rz = params[0], params[1], params[2]
+    tx, ty, tz = params[3], params[4], params[5]
+    X, Y, Z = objp_row
+
+    # Rodrigues 旋转
+    theta2 = rx*rx + ry*ry + rz*rz
+    if theta2 < 1e-20:
+        R00, R01, R02 = 1.0, 0.0, 0.0
+        R10, R11, R12 = 0.0, 1.0, 0.0
+        R20, R21, R22 = 0.0, 0.0, 1.0
+    else:
+        theta = theta2 ** 0.5
+        c, s = np.cos(theta), np.sin(theta)
+        ux, uy, uz = rx/theta, ry/theta, rz/theta
+        R00 = c + ux*ux*(1-c);   R01 = ux*uy*(1-c) - uz*s; R02 = ux*uz*(1-c) + uy*s
+        R10 = uy*ux*(1-c) + uz*s; R11 = c + uy*uy*(1-c);   R12 = uy*uz*(1-c) - ux*s
+        R20 = uz*ux*(1-c) - uy*s; R21 = uz*uy*(1-c) + ux*s; R22 = c + uz*uz*(1-c)
+
+    Xp = R00*X + R01*Y + R02*Z + tx
+    Yp = R10*X + R11*Y + R12*Z + ty
+    Zp = R20*X + R21*Y + R22*Z + tz
+    Zp = max(Zp, 1e-10)
+    return Xp/Zp, Yp/Zp
+
+
 if NUMBA_AVAILABLE:
     @jit(nopython=True, cache=True)
     def _ba_jacobian_residual(objp, imgp, K, params, J, residuals):
         """
         计算 BA 残差向量和雅可比矩阵（numba JIT 编译）
-        objp: (N, 3) 世界坐标点
-        imgp: (N, 2) 观测到的图像坐标
-        K: (3, 3) 内参矩阵
-        params: (6,) [r_x, r_y, r_z, t_x, t_y, t_z]
-        J: (2N, 6) 输出雅可比矩阵（预分配）
-        residuals: (2N,) 输出残差向量（预分配）
-        Returns: 总残差平方和
+        使用数值微分（6次前向投影），正确计算旋转变量雅可比
         """
         fx, fy = K[0, 0], K[1, 1]
         cx, cy = K[0, 2], K[1, 2]
-        rx, ry, rz = params[0], params[1], params[2]
-        tx, ty, tz = params[3], params[4], params[5]
-
-        # Rodrigues 旋转矩阵
-        theta = (rx * rx + ry * ry + rz * rz) ** 0.5
-        if theta < 1e-10:
-            R00, R01, R02 = 1.0, 0.0, 0.0
-            R10, R11, R12 = 0.0, 1.0, 0.0
-            R20, R21, R22 = 0.0, 0.0, 1.0
-        else:
-            c = np.cos(theta)
-            s = np.sin(theta)
-            ux, uy, uz = rx / theta, ry / theta, rz / theta
-            R00 = c + ux * ux * (1 - c)
-            R01 = ux * uy * (1 - c) - uz * s
-            R02 = ux * uz * (1 - c) + uy * s
-            R10 = uy * ux * (1 - c) + uz * s
-            R11 = c + uy * uy * (1 - c)
-            R12 = uy * uz * (1 - c) - ux * s
-            R20 = uz * ux * (1 - c) - uy * s
-            R21 = uz * uy * (1 - c) + ux * s
-            R22 = c + uz * uz * (1 - c)
+        eps = 1e-7
 
         total_err = 0.0
         n = objp.shape[0]
 
         for i in range(n):
+            # ---- 基准投影 ----
+            rx, ry, rz = params[0], params[1], params[2]
+            tx, ty, tz = params[3], params[4], params[5]
+
+            theta2 = rx*rx + ry*ry + rz*rz
+            if theta2 < 1e-20:
+                R00, R01, R02 = 1.0, 0.0, 0.0
+                R10, R11, R12 = 0.0, 1.0, 0.0
+                R20, R21, R22 = 0.0, 0.0, 1.0
+            else:
+                theta = np.sqrt(theta2)
+                c, s = np.cos(theta), np.sin(theta)
+                ux, uy, uz = rx/theta, ry/theta, rz/theta
+                R00 = c + ux*ux*(1-c);   R01 = ux*uy*(1-c) - uz*s; R02 = ux*uz*(1-c) + uy*s
+                R10 = uy*ux*(1-c) + uz*s; R11 = c + uy*uy*(1-c);   R12 = uy*uz*(1-c) - ux*s
+                R20 = uz*ux*(1-c) - uy*s; R21 = uz*uy*(1-c) + ux*s; R22 = c + uz*uz*(1-c)
+
             X, Y, Z = objp[i, 0], objp[i, 1], objp[i, 2]
-            # 旋转+平移
-            Xp = R00 * X + R01 * Y + R02 * Z + tx
-            Yp = R10 * X + R11 * Y + R12 * Z + ty
-            Zp = R20 * X + R21 * Y + R22 * Z + tz
+            Xp = R00*X + R01*Y + R02*Z + tx
+            Yp = R10*X + R11*Y + R12*Z + ty
+            Zp = R20*X + R21*Y + R22*Z + tz
+            if Zp < 1e-10: Zp = 1e-10
 
-            if Zp < 1e-10:
-                Zp = 1e-10
+            u0 = fx * Xp / Zp + cx
+            v0 = fy * Yp / Zp + cy
+            e_u = imgp[i, 0] - u0
+            e_v = imgp[i, 1] - v0
+            residuals[2*i] = e_u
+            residuals[2*i+1] = e_v
+            total_err += e_u*e_u + e_v*e_v
 
-            # 投影到图像平面
-            u_proj = fx * Xp / Zp + cx
-            v_proj = fy * Yp / Zp + cy
+            # ---- 数值雅可比（6个参数） ----
+            for p in range(6):
+                params_p = params.copy()
+                params_p[p] += eps
+                rx, ry, rz = params_p[0], params_p[1], params_p[2]
+                tx, ty, tz = params_p[3], params_p[4], params_p[5]
 
-            # 残差
-            e_u = imgp[i, 0] - u_proj
-            e_v = imgp[i, 1] - v_proj
-            residuals[2 * i] = e_u
-            residuals[2 * i + 1] = e_v
-            total_err += e_u * e_u + e_v * e_v
+                theta2p = rx*rx + ry*ry + rz*rz
+                if theta2p < 1e-20:
+                    Rp00, Rp01, Rp02 = 1.0, 0.0, 0.0
+                    Rp10, Rp11, Rp12 = 0.0, 1.0, 0.0
+                    Rp20, Rp21, Rp22 = 0.0, 0.0, 1.0
+                else:
+                    thetap = np.sqrt(theta2p)
+                    cp, sp = np.cos(thetap), np.sin(thetap)
+                    uxp, uyp, uzp = rx/thetap, ry/thetap, rz/thetap
+                    Rp00 = cp + uxp*uxp*(1-cp); Rp01 = uxp*uyp*(1-cp) - uzp*sp; Rp02 = uxp*uzp*(1-cp) + uyp*sp
+                    Rp10 = uyp*uxp*(1-cp) + uzp*sp; Rp11 = cp + uyp*uyp*(1-cp); Rp12 = uyp*uzp*(1-cp) - uxp*sp
+                    Rp20 = uzp*uxp*(1-cp) - uyp*sp; Rp21 = uzp*uyp*(1-cp) + uxp*sp; Rp22 = cp + uzp*uzp*(1-cp)
 
-            # 简化雅可比（仅一阶近似）
-            inv_Z = 1.0 / Zp
-            du_dX = -fx * inv_Z
-            du_dY = -fx * inv_Z
-            du_dZ = fx * Xp / (Zp * Zp)
-            dv_dX = -fy * inv_Z
-            dv_dY = -fy * inv_Z
-            dv_dZ = fy * Yp / (Zp * Zp)
+                Xpp = Rp00*X + Rp01*Y + Rp02*Z + tx
+                Ypp = Rp10*X + Rp11*Y + Rp12*Z + ty
+                Zpp = Rp20*X + Rp21*Y + Rp22*Z + tz
+                if Zpp < 1e-10: Zpp = 1e-10
 
-            J[2 * i, 0] = du_dX * 0 + du_dY * 0 + du_dZ * 0  # drx
-            J[2 * i, 1] = 0  # dry
-            J[2 * i, 2] = 0  # drz
-            J[2 * i, 3] = du_dX  # dtx
-            J[2 * i, 4] = du_dY  # dty
-            J[2 * i, 5] = du_dZ  # dtz
-            J[2 * i + 1, 0] = 0  # drx
-            J[2 * i + 1, 1] = dv_dX  # dry
-            J[2 * i + 1, 2] = 0  # drz
-            J[2 * i + 1, 3] = dv_dX  # dtx
-            J[2 * i + 1, 4] = dv_dY  # dty
-            J[2 * i + 1, 5] = dv_dZ  # dtz
+                up = fx * Xpp / Zpp + cx
+                vp = fy * Ypp / Zpp + cy
+
+                J[2*i,   p] = (up - u0) / eps
+                J[2*i+1, p] = (vp - v0) / eps
 
         return total_err
 else:
     def _ba_jacobian_residual(objp, imgp, K, params, J, residuals):
         """无 numba 时的纯 Python 回退（慢，仅用于调试）"""
-        fx = K[0, 0]
-        fy = K[1, 1]
+        fx, fy = K[0, 0], K[1, 1]
         cx, cy = K[0, 2], K[1, 2]
-        r_vec = params[:3]
-        t_vec = params[3:6]
-        R, _ = cv2.Rodrigues(r_vec)
+        r_vec = params[:3].copy()
+        t_vec = params[3:6].copy()
         proj, _ = cv2.projectPoints(objp, r_vec, t_vec, K, np.zeros(5))
         proj = proj.reshape(-1, 2)
         residuals[:] = (imgp - proj).flatten()
+
+        eps = 1e-6
+        for p in range(6):
+            params_p = params.copy()
+            params_p[p] += eps
+            r_p = params_p[:3]
+            t_p = params_p[3:6]
+            proj_p, _ = cv2.projectPoints(objp, r_p, t_p, K, np.zeros(5))
+            proj_p = proj_p.reshape(-1, 2)
+            J[:, p] = ((proj_p - proj) / eps).flatten()
         return float(np.sum(residuals ** 2))
 
     def evaluate_calibration(self, test_images_left, test_images_right,
