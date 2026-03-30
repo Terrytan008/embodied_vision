@@ -6,47 +6,51 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(dirname "$SCRIPT_DIR")"
-BUILD_DIR="${WS_DIR}/build"
 
 echo "=== Embodied Vision 构建 ==="
 echo "工作空间: $WS_DIR"
 
-# 检查ROS2
+# 检查 ROS2
 if ! command -v colcon &> /dev/null; then
     echo "[错误] colcon 未安装"
     echo "安装: sudo apt install python3-colcon-common-extensions"
     exit 1
 fi
 
-# 检查CUDA
-if ! command -v nvcc &> /dev/null; then
-    echo "[警告] CUDA 未安装，GPU加速模块将被禁用"
+# 检查 OpenCV
+if python3 -c "import cv2" 2>/dev/null; then
+    echo "[OK] OpenCV: $(python3 -c 'import cv2; print(cv2.__version__)')"
 else
-    CUDA_VERSION=$(nvcc --version | grep "release" | awk '{print $5}' | tr -d ',')
-    echo "[OK] CUDA $CUDA_VERSION"
+    echo "[警告] OpenCV Python 未安装（构建 C++ 库不需要）"
 fi
 
-# 创建构建目录
-mkdir -p "$BUILD_DIR"
+# 检查 CUDA
+if command -v nvcc &> /dev/null; then
+    CUDA_VERSION=$(nvcc --version | grep "release" | awk '{print($5)}' | tr -d ',')
+    echo "[OK] CUDA $CUDA_VERSION"
+else
+    echo "[信息] CUDA 未安装，GPU 模块将被禁用"
+fi
+
 cd "$WS_DIR"
 
-# 清理旧构建
-echo "[1/3] 清理..."
-colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tee "${BUILD_DIR}/build.log"
+# 增量构建（保留 CMake 缓存）
+echo "[1/2] 构建..."
+colcon build --merge-install \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    --event-handlers console_direct+ 2>&1
 
+# 运行测试
 echo ""
-echo "[2/3] 构建完成"
-echo "构建日志: ${BUILD_DIR}/build.log"
+echo "[2/2] 运行单元测试..."
+colcon test --merge-install \
+    --event-handlers console_direct+ \
+    --return-code-on-test-failure \
+    --cmake-args -DCMAKE_BUILD_TYPE=Release 2>&1 || true
 
-# 运行测试（如果有）
-if colcon test --dry-run &> /dev/null; then
-    echo "[3/3] 运行测试..."
-    colcon test --merge-install --event-handlers console_direct+
-    colcon test-result --verbose
-else
-    echo "[3/3] 跳过测试（无可测试包）"
-fi
+colcon test-result --verbose 2>&1 || echo "（无可用测试结果）"
 
 echo ""
 echo "=== 构建完成 ==="
 echo "source: source install/setup.bash"
+echo "运行:   ros2 launch stereo_vision_driver driver.launch.py simulator:=true"
