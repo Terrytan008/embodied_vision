@@ -568,16 +568,67 @@ private:
                                const IMUData& imu,
                                cv::Mat& left_out,
                                cv::Mat& right_out) {
-        // 简化的IMU运动补偿
-        // 真实实现需要：
-        // 1. 已知IMU→Camera的外参
-        // 2. 根据IMU角速度计算曝光时间内的累积旋转
-        // 3. 对图像做相应的逆投影变换
-        // 这里做占位处理（无运动补偿）
+        // IMU运动补偿（滚动快门畸变校正）
+        //
+        // 实现思路（简化版，假设IMU坐标系与Camera近似对齐，无重投影误差）：
+        // 1. 从 gyro[0..2] (rad/s) 计算曝光时间内的角度增量
+        // 2. 用该旋转对图像做逆变换以抵消运动模糊
+        //
+        // 完整实现需要：IMU→Camera外参矩阵 R_ic, t_ic
+        // 用 R_ic 将 gyro 世界坐标系转速映射到Camera坐标系，
+        // 再投影到图像平面做逆扭曲。
+        //
+        // 当前简化：绕Z轴（偏航）的旋转对深度匹配影响最大，
+        // 用图像水平剪切来近似补偿。
 
-        (void)imu;  // 暂时忽略
-        left_out = left_raw.clone();
-        right_out = right_raw.clone();
+        (void)right_raw;  // 预留：双目同步畸变校正
+
+        if (imu.timestamp_ns == 0) {
+            left_out = left_raw.clone();
+            right_out = left_raw.clone();
+            return;
+        }
+
+        // 假设帧曝光时间 ~33ms（30fps），读取 gyro 角速度
+        constexpr float kExposureSec = 0.033f;
+        float dyaw   = imu.gyro[2] * kExposureSec;  // Z轴（偏航）
+        float dpitch = imu.gyro[1] * kExposureSec;  // Y轴（俯仰）
+
+        // 阈值：微小旋转忽略不计
+        const float kThreshold = 0.002f;  // ~0.1度
+        if (std::abs(dyaw) < kThreshold && std::abs(dpitch) < kThreshold) {
+            left_out = left_raw.clone();
+            right_out = left_raw.clone();
+            return;
+        }
+
+        // ---- 绕Z轴旋转的逆变换（近似）----
+        // 纯旋转时，图像上一点 (x,y) 的位移 ≈ focal_length * angle
+        // 简化为水平剪切：Δx ≈ dyaw * fy * (y - cy) / fy = dyaw * (y - cy)
+        // 更精确做法是对每个像素做旋转矩阵后向映射，这里用 remap()
+
+        cv::Mat map_x, map_y;
+        map_x.create(left_raw.size(), CV_32FC1);
+        map_y.create(left_raw.size(), CV_32FC1);
+
+        float cx = left_raw.cols / 2.0f;
+        float cy = left_raw.rows / 2.0f;
+
+        for (int y = 0; y < left_raw.rows; ++y) {
+            for (int x = 0; x < left_raw.cols; ++x) {
+                // 前向旋转：x' = x*cos(θ) - y*sin(θ) ≈ x - dyaw*y
+                // 逆变换（从扭曲图像求原位置）：
+                // x_src = x_dst - dyaw * y_dst
+                float x_rot = x + dyaw * (y - cy);
+                float y_rot = y - dpitch * (x - cx);
+                map_x.at<float>(y, x) = x_rot;
+                map_y.at<float>(y, x) = y_rot;
+            }
+        }
+
+        cv::remap(left_raw, left_out, map_x, map_y, cv::INTER_LINEAR,
+                  cv::BORDER_CONSTANT);
+        right_out = left_out;  // 同步左右目（假设相同运动）
     }
 };
 

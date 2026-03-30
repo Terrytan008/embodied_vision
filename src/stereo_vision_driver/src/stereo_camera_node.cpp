@@ -110,7 +110,7 @@ private:
             msg.header.frame_id = "stereo_left";
             msg.height = frame->left_rect.rows;
             msg.width = frame->left_rect.cols;
-            msg.encoding = "rgb8";
+            msg.encoding = frame->left_rect.channels() == 3 ? "rgb8" : "mono8";
             msg.step = static_cast<uint32_t>(frame->left_rect.step);
             msg.data.assign(frame->left_rect.datastart,
                            frame->left_rect.dataend);
@@ -124,7 +124,7 @@ private:
             msg.header.frame_id = "stereo_right";
             msg.height = frame->right_rect.rows;
             msg.width = frame->right_rect.cols;
-            msg.encoding = "rgb8";
+            msg.encoding = frame->right_rect.channels() == 3 ? "rgb8" : "mono8";
             msg.step = static_cast<uint32_t>(frame->right_rect.step);
             msg.data.assign(frame->right_rect.datastart,
                            frame->right_rect.dataend);
@@ -164,7 +164,7 @@ private:
         }
 
         // IMU
-        if (pub_imu_->get_subscription_count() > 0 && frame->imu.has_value()) {
+        if (pub_imu_ && pub_imu_->get_subscription_count() > 0 && frame->imu.has_value()) {
             sensor_msgs::msg::Imu imu_msg;
             imu_msg.header.stamp = stamp;
             imu_msg.header.frame_id = "stereo_imu";
