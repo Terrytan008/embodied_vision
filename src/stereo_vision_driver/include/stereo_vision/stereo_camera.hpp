@@ -9,7 +9,7 @@
 #include <array>
 #include <cstdint>
 
-#include <opencv2/opencv2.hpp>
+#include <opencv2/opencv.hpp>
 
 namespace stereo_vision {
 
