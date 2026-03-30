@@ -7,6 +7,7 @@
 
 #include "stereo_vision/hardware/capture_base.hpp"
 #include "stereo_vision/hardware/v4l2_capture.hpp"
+#include <rclcpp/rclcpp.hpp>
 
 #ifdef ENABLE_NVMEDIA
 #include "stereo_vision/hardware/nv_nvmedia_capture.hpp"
