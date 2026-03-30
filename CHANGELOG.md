@@ -107,3 +107,43 @@
 ### 文档 (Documentation)
 
 - **README.md** 全面更新：环境要求、构建选项、服务调用、模块映射
+
+---
+
+## [0.1.0] — 2026-03-30（下午）
+
+### 修复 (Afternoon session)
+
+- **OpenCV 头文件路径错误** (`stereo_camera.hpp`)
+  - 修复：`opencv2/opencv2.hpp` → `opencv2/opencv.hpp`
+  - 影响：所有编译单元均受影响，是之前遗留的阻塞性 bug
+
+- **hardware_selector.cpp 缺失 rclcpp 头文件**
+  - 修复：添加 `#include <rclcpp/rclcpp.hpp>`（`RCLCPP_WARN` 使用所需）
+
+- **ConfidenceInference 接入 realGrabFrame pipeline**
+  - SGBM 置信度计算后，若 `confidence_nn_` 已加载：
+    - 左右图转灰度 → `confidence_nn_->infer(left_gray, right_gray, disparity)`
+    - 融合：NN×0.6 + SGBM×0.4
+  - ONNX 模型加载在 `Impl::initialize()` 中，pipeline 接入在 `realGrabFrame()`
+
+- **online_calibrator.py Jacobian bug**
+  - 旧版：rotation Jacobian 全零（数值微分求导写错）
+  - 新版：6 次前向投影数值微分，Rodrigues 旋转矩阵正确实现
+  - numba `@jit(nopython=True, cache=True)` 加速
+
+- **ConfidenceInference ODR 违规**
+  - `.hpp` 声明与 `.cpp` 定义 private 成员不一致
+  - 合并为单一完整类定义（`.hpp`），`.cpp` 仅保留 out-of-line 方法
+
+- **stereo_vision_msgs 包独立**
+  - 从 `stereo_vision_driver/msg/` 独立为独立 ROS2 interface 包
+  - 解决 `stereo_vision_driver` 依赖 `stereo_vision_msgs` 但不存在的编译错误
+
+- **hardware_factory.cpp 死代码删除**
+  - 未编译入库但包含同名 `createCaptureDevice` 阴影
+
+### 新增
+
+- `.clang-format`：代码风格配置（Google style，120 列）
+- `scripts/setup_workspace.sh`：ROS2 环境 + 工作空间初始化 + 便捷别名
