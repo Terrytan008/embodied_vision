@@ -13,6 +13,9 @@ option(ENABLE_ONNXRUNTIME "启用 ONNXRuntime 置信度推理" ON)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
+# 消息包（stereo_vision_msgs 独立包）
+find_package(stereo_vision_msgs REQUIRED)
+
 # OpenCV
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -24,12 +27,6 @@ if(CUDA_FOUND)
     include_directories(${CUDA_INCLUDE_DIRS})
     add_definitions(-DENABLE_CUDA)
 endif()
-
-# ========== 消息 ----------
-rosidl_generate_interfaces(${PROJECT_NAME}
-    "msg/StereoCalibrationInfo.msg"
-    "msg/StereoDeviceStatus.msg"
-)
 
 # ========== 核心库（无ROS依赖）----------
 set(HW_SOURCES
@@ -103,15 +100,15 @@ if(BUILD_TESTING)
         enable_testing()
         add_executable(test_stereo_depth
             test/test_stereo_depth.cpp
-            src/stereo_depth.cpp
-            src/stereo_camera_impl.cpp
         )
         target_include_directories(test_stereo_depth PRIVATE
             include
             include/stereo_vision
             ${OpenCV_INCLUDE_DIRS}
         )
+        # 链接完整库（包含 SGBM + ONNX 置信度）
         target_link_libraries(test_stereo_depth
+            stereo_vision_core
             ${OpenCV_LIBS}
             pthread
             GTest::GTest
@@ -133,4 +130,8 @@ ament_auto_package()
 
 install(DIRECTORY include/
     DESTINATION include
+)
+
+install(DIRECTORY launch/
+    DESTINATION share/${PROJECT_NAME}/launch
 )

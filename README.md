@@ -25,21 +25,32 @@
 
 | 模块 | 文件 | 说明 |
 |------|------|------|
-| **SGBM深度计算** | `stereo_depth.cpp` | Semi-Global Matching + 置信度估计 |
-| **置信度NN模型** | `train_confidence.py` | 轻量CNN训练 pipeline |
-| **ONNX导出** | `export_onnx.py` | PyTorch→ONNX→TensorRT |
-| **C++推理** | `confidence_onnx.cpp` | ONNXRuntime推理引擎 |
-| **V4L2捕获** | `nv_csi_capture.cpp` | CSI-2 视频采集 |
-| **BMI088 IMU** | `imu_bmi088.cpp` | IMU驱动 |
+| **SGBM深度计算** | `src/stereo_vision_driver/src/stereo_depth.cpp` | Semi-Global Matching + 置信度估计 |
+| **置信度NN模型** | `src/stereo_vision_calibration/scripts/train_confidence.py` | 轻量CNN训练 pipeline |
+| **ONNX导出** | `src/stereo_vision_calibration/scripts/export_onnx.py` | PyTorch→ONNX |
+| **C++推理** | `src/stereo_vision_driver/src/hardware/confidence_onnx.cpp` | ONNXRuntime推理引擎 |
+| **V4L2捕获** | `src/stereo_vision_driver/src/hardware/v4l2_capture.cpp` | Linux V4L2 CSI-2 采集 |
+| **NvMedia捕获** | `src/stereo_vision_driver/src/hardware/nv_nvmedia_capture.cpp` | NVIDIA Jetson/DRIVE (需DriveOS SDK) |
+| **BMI088 IMU** | `src/stereo_vision_driver/src/hardware/imu_bmi088.cpp` | IMU驱动 (200Hz I2C) |
+| **消息类型** | `src/stereo_vision_msgs/msg/` | StereoCalibrationInfo, StereoDeviceStatus |
 
 ## 快速开始
+
+### 环境要求
+- **ROS2** Humble 或 Jazzy
+- **OpenCV4** (≥4.5)
+- **GTest** (可选，单元测试)
+- **ONNXRuntime** (可选，NN置信度推理)
 
 ### 构建
 
 ```bash
-# ROS2 工作空间
-cd ~/embodied_vision_ws
-colcon build --merge-install
+cd ~/embodied_vision_ws/src/embodied_vision
+
+# 完整构建（含ONNX支持）
+colcon build --merge-install \
+  --cmake-args -DENABLE_ONNXRUNTIME=ON
+
 source install/setup.bash
 ```
 
@@ -52,23 +63,36 @@ ros2 launch stereo_vision_driver driver.launch.py simulator:=true
 ### 真实硬件模式
 
 ```bash
-ros2 launch stereo_vision_driver driver.launch.py publish_hz:=10
+ros2 launch stereo_vision_driver driver.launch.py \
+  publish_hz:=30 \
+  confidence_threshold:=0.65 \
+  hdr_mode:=hdr_x2
 ```
 
 ### 订阅话题
 
 ```bash
-# 深度图 (米)
+# 深度图 (米, 32FC1)
 ros2 topic echo /stereo_camera_node/depth
 
-# 置信度图 (0.0~1.0)
+# 置信度图 (0.0~1.0, 32FC1)
 ros2 topic echo /stereo_camera_node/confidence
 
-# 左目图像
+# 左目校正图像
 ros2 topic echo /stereo_camera_node/left/image_rect
 
 # IMU
 ros2 topic echo /stereo_camera_node/imu
+```
+
+### 服务
+
+```bash
+# 触发在线标定
+ros2 service call /stereo_camera_node/recalibrate std_srvs/srv/Trigger
+
+# 查询当前标定参数
+ros2 service call /stereo_camera_node/get_calibration std_srvs/srv/Trigger
 ```
 
 ## 核心API
