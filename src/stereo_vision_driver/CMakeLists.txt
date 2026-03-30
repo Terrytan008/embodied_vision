@@ -65,7 +65,7 @@ if(ENABLE_ONNXRUNTIME)
     endif()
 endif()
 
-add_library(stereo_vision_core STATIC ${HW_SOURCES})
+ament_auto_add_library(stereo_vision_core STATIC ${HW_SOURCES})
 
 target_include_directories(stereo_vision_core PUBLIC
     include
@@ -75,8 +75,10 @@ target_include_directories(stereo_vision_core PUBLIC
 target_link_libraries(stereo_vision_core
     ${OpenCV_LIBS}
     pthread
-    ${CUDA_LIBRARIES}
 )
+if(CUDA_FOUND)
+    target_link_libraries(stereo_vision_core ${CUDA_LIBRARIES})
+endif()
 
 if(ONNXRUNTIME_FOUND)
     target_link_libraries(stereo_vision_core ${ONNXRUNTIME_LIBRARIES})
@@ -87,7 +89,6 @@ rclcpp_components_register_node(stereo_vision_core
     PLUGIN "stereo_vision_driver::StereoCameraNode"
     EXECUTABLE stereo_camera_node
 )
-ament_auto_target_library(stereo_vision_core)
 
 # ========== 测试 ----------
 if(BUILD_TESTING)
@@ -115,7 +116,7 @@ if(BUILD_TESTING)
             GTest::Main
         )
         ament_add_test(test_stereo_depth
-            GENERATE_RESULT_FOR_RETURN_CODE
+            GENERATE_RESULT_FOR_RETURN_CODE_ZERO
             COMMAND $<TARGET_FILE:test_stereo_depth>
             ENV ${colcon_test_env}
         )

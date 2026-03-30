@@ -17,36 +17,37 @@ namespace stereo_vision {
 // ============================================================================
 class SGBMDepthEngine {
 public:
+    // 置信度估计模式（前置声明）
+    enum class ConfidenceMode {
+        LeftRightCheck,   // 左右一致性检查
+        MatchCost,         // 匹配代价分布
+        SobelTexture,      // Sobel梯度纹理
+        Combined           // 综合（推荐）
+    };
+
     struct Params {
         // 匹配参数
-        int min_disparity = 0;            // 最小视差
-        int num_disparities = 128;         // 视差搜索范围（16的倍数）
-        int block_size = 7;               // 匹配窗口大小（奇数）
-        int P1 = 8 * 7 * 7;              // 平滑惩罚P1
-        int P2 = 32 * 7 * 7;             // 平滑惩罚P2
-        int disp_12_max_diff = -1;        // 左右一致性检查容差
-        int uniqueness_ratio = 15;        // 唯一性比率阈值
-        int speckle_window_size = 100;   // 散斑滤波窗口
-        int speckle_range = 32;           // 散斑范围
-        int pre_filter_cap = 63;          // 预处理滤波上限
-        int pre_filter_size = 5;          // Sobel预处理窗口
+        int min_disparity = 0;
+        int num_disparities = 128;
+        int block_size = 7;
+        int P1 = 8 * 7 * 7;
+        int P2 = 32 * 7 * 7;
+        int disp_12_max_diff = -1;
+        int uniqueness_ratio = 15;
+        int speckle_window_size = 100;
+        int speckle_range = 32;
+        int pre_filter_cap = 63;
+        int pre_filter_size = 5;
 
         // 置信度参数
-        float min_confidence = 0.4f;      // 最低置信度
-        int texture_threshold = 10;       // 低纹理区域阈值
+        float min_confidence = 0.4f;
+        int texture_threshold = 10;
 
         // 置信度估计模式
-        enum class ConfidenceMode {
-            LeftRightCheck,   // 左右一致性检查
-            MatchCost,        // 匹配代价分布
-            SobelTexture,      // Sobel梯度纹理
-            Combined          // 综合（推荐）
-        };
         ConfidenceMode confidence_mode = ConfidenceMode::Combined;
     };
 
-    SGBMDepthEngine(const Params& params = Params{}) : params_(params) {
-        // 预计算 Sobel 梯度卷积核
+    SGBMDepthEngine(const Params& params) : params_(params) {
         initSobelKernel();
     }
 
@@ -71,7 +72,7 @@ public:
                  cv::Mat& disparity) {
 
         CV_Assert(left_raw.size() == right_raw.size());
-        CV_Assert(!calib.left_k.empty() && !calib.T_lr.empty());
+        CV_Assert(!calib.left_k.empty() && !calib.t_lr.empty());
 
         // ---- 预处理：校正 + 灰度化 ----
         cv::Mat left_gray, right_gray;
@@ -144,15 +145,21 @@ private:
         cv::Mat D1 = cv::Mat(1, 5, CV_32F, const_cast<float*>(calib.left_d.data()));
         cv::Mat D2 = cv::Mat(1, 5, CV_32F, const_cast<float*>(calib.right_d.data()));
 
-        // 外参：T = [Tx Ty Tz]
-        cv::Mat R = cv::Mat(3, 3, CV::identity.type());
-        cv::Mat T = cv::Mat(3, 1, CV_32F);
-        T.at<float>(0) = calib.T_lr[3];
-        T.at<float>(1) = calib.T_lr[7];
-        T.at<float>(2) = calib.T_lr[11];
+        // 外参：从 calib.t_lr (3x4 RT矩阵) 提取 R 和 T
+        cv::Mat R(3, 3, CV_32F);
+        cv::Mat T(3, 1, CV_32F);
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                R.at<float>(i, j) = calib.t_lr[i * 4 + j];
+            }
+        }
+        T.at<float>(0) = calib.t_lr[3];
+        T.at<float>(1) = calib.t_lr[7];
+        T.at<float>(2) = calib.t_lr[11];
 
         // 校正矩阵
         cv::Mat R1, R2, P1, P2, Q;
+        cv::Rect validRoi;
         cv::stereoRectify(K1, D1, K2, D2, left_gray.size(),
                          R, T, R1, R2, P1, P2, Q,
                          cv::CALIB_ZERO_DISPARITY, -1, left_gray.size(), &validRoi);
@@ -182,11 +189,10 @@ private:
             params_.P2,
             params_.disp_12_max_diff,
             params_.pre_filter_cap,
-            params_.pre_filter_size,
             params_.uniqueness_ratio,
             params_.speckle_window_size,
             params_.speckle_range,
-            false  // full DP
+            cv::StereoSGBM::MODE_SGBM  // 动态规划模式
         );
 
         // 左右一致性检查（成本更高但更准确）
@@ -202,11 +208,10 @@ private:
             params_.P2,
             params_.disp_12_max_diff,
             params_.pre_filter_cap,
-            params_.pre_filter_size,
             params_.uniqueness_ratio,
             params_.speckle_window_size,
             params_.speckle_range,
-            true  // full DP for right view
+            cv::StereoSGBM::MODE_SGBM
         );
         sgbm_right->compute(right, left, disp_right);
 

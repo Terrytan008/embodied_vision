@@ -74,7 +74,7 @@ static void debayerRGGG(const cv::Mat& raw12, cv::Mat& out_rgb) {
 
     // OpenCV Bayer → BGR 双线性插值
     // IMX678 是 RGGB → BGGR 字节序对应 COLOR_BAYERBG2BGR
-    cv::cvtColor(raw8, out_rgb, cv::COLOR_BAYERBG2BGR);
+    cv::cvtColor(raw8, out_rgb, cv::COLOR_BayerBG2BGR);
 }
 
 // ============================================================
@@ -149,7 +149,7 @@ public:
 
     // ---- ONNX 置信度推理（可选）----
     std::unique_ptr<ConfidenceInference> confidence_nn_;
-    std::string onnx_model_path_;"
+    std::string onnx_model_path_;
 
     // ---- 设备配置 ----
     DeviceConfig hw_config_{};

@@ -126,7 +126,7 @@ struct DeviceStatus {
 struct CalibrationData {
     std::array<float, 9> left_k;       // 左目内参矩阵
     std::array<float, 9> right_k;     // 右目内参矩阵
-    std::array<float, 12> T_lr;       // 左右目外参 (RT 3x4)
+    std::array<float, 12> t_lr;       // 左右目外参 (RT 3x4)
     std::array<float, 5> left_d;       // 左目畸变系数
     std::array<float, 5> right_d;      // 右目畸变系数
     float baseline_mm = 80.0f;         // 基线距离

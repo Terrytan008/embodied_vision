@@ -59,7 +59,7 @@ namespace hardware {
  */
 std::unique_ptr<CaptureDevice>
 createCaptureDevice(const DeviceConfig& config,
-                   const std::string& preferred_backend = "auto") {
+                   const std::string& preferred_backend) {
     std::string backend = preferred_backend;
 
     if (backend == "auto") {

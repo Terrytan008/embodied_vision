@@ -10,7 +10,7 @@ float32[9] left_k
 float32[9] right_k
 
 # 左右目外参 (RT, 3x4 flatten)
-float32[12] T_lr
+float32[12] t_lr
 
 # 左目畸变系数 (k1, k2, p1, p2, k3)
 float32[5] left_d

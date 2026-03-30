@@ -265,7 +265,7 @@ struct V4L2CaptureDevice::Impl {
                 // 构建帧数据
                 FrameBuffer fb;
                 fb.data = buffers[buf.index].start;
-                fb.length = buffers[buf.index].length;
+                fb.stride = buffers[buf.index].length;
                 fb.width = config.csi2.width;
                 fb.height = config.csi2.height;
                 fb.timestamp_ns = buffers[buf.index].timestamp_ns;
@@ -402,10 +402,8 @@ ErrorCode V4L2CaptureDevice::getLastError() const {
 
 SensorInfo V4L2CaptureDevice::getSensorInfo() const {
     SensorInfo info{};
-    info.width = impl_->config.csi2.width;
-    info.height = impl_->config.csi2.height;
-    info.pixel_format = impl_->config.csi2.pixel_format;
-    info.name = "V4L2 CSI-2 Camera";
+    std::strncpy(info.name, "V4L2 CSI-2 Camera", 63);
+    info.name[63] = '\0';
     return info;
 }
 
@@ -447,7 +445,7 @@ bool V4L2CaptureDevice::setHdrMode(int mode) {
 
     // 尝试通过 V4L2_CID_MANELEXPO_MODE（厂商扩展）设置
     // 如果驱动不支持则静默失败，不影响基本采集
-    ctrl.id = V4L2_CID_MANELEXPO_MODE;  // 某些厂商支持
+    ctrl.id = V4L2_CID_EXPOSURE;  // 标准曝光控制（厂商HDR可能需要私有ioctl）
     ctrl.value = hdr_mode_val;
     ctrls.ctrl_class = V4L2_CTRL_CLASS_CAMERA;
     ctrls.count = 1;
