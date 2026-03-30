@@ -13,14 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 ROS2 Humble
+      - name: 安装 ROS2 Jazzy
         uses: ros-tooling/setup-ros@v0.7
         with:
-          required-ros-distributions: humble
+          required-ros-distributions: jazzy
 
       - name: 安装依赖
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           sudo apt update
           sudo apt install -y \
             python3-colcon-common-extensions \
@@ -33,12 +33,12 @@ jobs:
 
       - name: 构建
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
       - name: 运行测试
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           colcon test --merge-install \
             --event-handlers console_direct+ \
             --cmake-args -DCMAKE_BUILD_TYPE=Release \
@@ -47,7 +47,7 @@ jobs:
 
       - name: 运行 GTest 单元测试
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           # 直接运行测试可执行文件
           cd build/stereo_vision_driver
           if [ -f test/test_stereo_depth ]; then
@@ -60,7 +60,7 @@ jobs:
 
       - name: 构建并测试 stereo_vision_calibration
         run: |
-          source /opt/ros/humble/setup.bash
+          source /opt/ros/jazzy/setup.bash
           cd src/stereo_vision_calibration
           pip install opencv-python numpy torch --quiet
           python3 scripts/train_confidence.py --help 2>/dev/null && echo "train_confidence.py OK" || echo "train_confidence.py 有错误"
