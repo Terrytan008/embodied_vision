@@ -116,9 +116,11 @@ protected:
  *   - NVIDIA Jetson / DRIVE → NvCaptureDevice
  *   - 其他 Linux → V4L2CaptureDevice
  *
- * @param platform 强制指定平台（为空则自动检测）
+ * @param config 设备配置
+ * @param preferred_backend 强制指定后端 ("v4l2" / "nvmedia" / "auto")
  */
 std::unique_ptr<CaptureDevice>
-createCaptureDevice(const std::string& platform = "");
+createCaptureDevice(const DeviceConfig& config,
+                    const std::string& preferred_backend = "auto");
 
 }  // namespace stereo_vision::hardware

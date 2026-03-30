@@ -137,6 +137,10 @@ struct DeviceConfig {
     // FPD-Link 解串器地址
     uint8_t deserializer_addr = 0x40;
 
+    // V4L2 设备路径（模拟器模式下可为空）
+    const char* left_device = "/dev/video0";
+    const char* right_device = "/dev/video2";
+
     // 模拟器（开发用，不连接真实硬件）
     bool simulator_mode = false;
 };

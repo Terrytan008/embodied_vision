@@ -10,6 +10,8 @@
 
 #include <chrono>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <cstring>
 
 namespace stereo_vision {
@@ -40,6 +42,12 @@ public:
     // ---- 帧缓冲 ----
     std::atomic<bool> running_{false};
     std::mutex frame_mutex_;
+    std::condition_variable frame_cv_;
+    cv::Mat left_raw_;
+    cv::Mat right_raw_;
+    uint64_t left_ts_ns_ = 0;
+    uint64_t right_ts_ns_ = 0;
+    std::atomic<uint64_t> frame_id_{0};
     FrameData current_frame_;
 
     // ---- SGBM 深度引擎 ----
@@ -134,6 +142,52 @@ public:
                         "右目录制设备初始化失败（单目模式继续）");
             capture_right_.reset();
         }
+
+        // ---- 启动左右目录制线程（真实硬件模式）----
+        running_.store(true);
+
+        // 左目采集回调
+        if (capture_left_) {
+            capture_left_->startStreaming(
+                [this](const FrameBuffer& left, const FrameBuffer&, const IMURawData&) {
+                    if (!left.empty() && running_.load()) {
+                        std::lock_guard<std::mutex> lock(frame_mutex_);
+                        // RAW12 → cv::Mat（假设 IMX678 RGGB 格式）
+                        // 实际使用 debayer/BayerToBGR，这里简化为灰度
+                        int w = left.width, h = left.height;
+                        cv::Mat raw(h, w, CV_8UC1);
+                        const uint8_t* src = static_cast<const uint8_t*>(left.data);
+                        // RAW12 → 8bit（丢弃低4bit）
+                        for (size_t i = 0; i < raw.total() && i < left.length; ++i) {
+                            raw.data[i] = src[i] & 0xF0;
+                        }
+                        left_raw_ = raw.clone();
+                        left_ts_ns_ = left.timestamp_ns;
+                        frame_cv_.notify_one();
+                    }
+                });
+        }
+
+        // 右目采集回调
+        if (capture_right_) {
+            capture_right_->startStreaming(
+                [this](const FrameBuffer&, const FrameBuffer& right, const IMURawData&) {
+                    if (!right.empty() && running_.load()) {
+                        std::lock_guard<std::mutex> lock(frame_mutex_);
+                        int w = right.width, h = right.height;
+                        cv::Mat raw(h, w, CV_8UC1);
+                        const uint8_t* src = static_cast<const uint8_t*>(right.data);
+                        for (size_t i = 0; i < raw.total() && i < right.length; ++i) {
+                            raw.data[i] = src[i] & 0xF0;
+                        }
+                        right_raw_ = raw.clone();
+                        right_ts_ns_ = right.timestamp_ns;
+                    }
+                });
+        }
+
+        RCLCPP_INFO(rclcpp::get_logger("StereoCamera"),
+                    "左右目录制线程已启动");
 
         // ---- 创建 IMU ----
         imu_ = std::make_unique<BMI088Driver>();
@@ -272,22 +326,41 @@ StereoCamera::create(const CameraConfig& config, void* node_base) {
             return frame;
         }
 
-        std::unique_ptr<FrameData> realGrabFrame(uint32_t) {
+        std::unique_ptr<FrameData> realGrabFrame(uint32_t timeout_ms) {
             auto frame = std::make_unique<FrameData>();
 
-            // TODO: 从V4L2采集线程获取真实左右目图像
-            // 这里先用占位图像，实际会从 capture_loop_ 同步获取
-            //
-            // 真实流程：
-            // 1. V4L2 captureLoop() 将左右帧写入 left_buffer_, right_buffer_
-            // 2. 本方法从共享内存读取，并运行 SGBM
-            //
-            // 目前输出空白帧（待硬件对接后填充）
+            // ---- 等待左右目帧到达 ----
+            {
+                std::unique_lock<std::mutex> lock(impl_->frame_mutex_);
+                bool ok = impl_->frame_cv_.wait_for(
+                    lock, std::chrono::milliseconds(timeout_ms),
+                    [this] { return !impl_->left_raw_.empty() && !impl_->right_raw_.empty(); }
+                );
+                if (!ok) {
+                    impl_->last_error_ = {
+                        StereoError::FRAME_DROPPED,
+                        "Frame timeout - no frames received",
+                        std::chrono::steady_clock::now().time_since_epoch().count(),
+                        true, false
+                    };
+                    impl_->drop_count_++;
+                    return frame;
+                }
+            }
+
+            cv::Mat left_raw, right_raw;
+            uint64_t frame_ts_ns = 0;
+            {
+                std::lock_guard<std::mutex> lock(impl_->frame_mutex_);
+                left_raw = impl_->left_raw_.clone();
+                right_raw = impl_->right_raw_.clone();
+                frame_ts_ns = impl_->left_ts_ns_;
+            }
 
             // ---- 填充标定信息 ----
             CalibrationData calib = getCalibration();
 
-            // ---- 如果有左右目图像，进行深度计算 ----
+            // ---- 进行深度计算 ----
             if (!left_raw.empty() && !right_raw.empty() && depth_engine_) {
                 cv::Mat depth_m, confidence, disparity;
                 if (impl_->imu_available_.load()) {
@@ -322,8 +395,14 @@ StereoCamera::create(const CameraConfig& config, void* node_base) {
                 frame->depth_m = depth_m;
                 frame->confidence = confidence;
                 frame->disparity = disparity;
+                frame->left_rect = left_raw;
+                frame->right_rect = right_raw;
             }
 
+            frame->metadata.hw_timestamp_ns = frame_ts_ns;
+            frame->metadata.system_timestamp_ns =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
             impl_->frame_count_++;
             return frame;
         }
