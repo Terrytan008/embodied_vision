@@ -606,6 +606,30 @@ StereoCamera::create(const CameraConfig& config, void* node_base) {
                     confidence.setTo(0.0f);
                 }
 
+                // ---- ONNX NN 置信度推理（可选，与 SGBM 置信度融合）----
+                if (impl_->confidence_nn_) {
+                    cv::Mat left_gray, right_gray;
+                    if (left_raw.channels() == 3) {
+                        cv::cvtColor(left_raw, left_gray, cv::COLOR_BGR2GRAY);
+                        cv::cvtColor(right_raw, right_gray, cv::COLOR_BGR2GRAY);
+                    } else {
+                        left_gray = left_raw;
+                        right_gray = right_raw;
+                    }
+                    try {
+                        cv::Mat nn_confidence = impl_->confidence_nn_->infer(
+                            left_gray, right_gray, disparity);
+                        // 融合：NN 置信度 × 0.6 + SGBM × 0.4
+                        if (nn_confidence.size() == confidence.size()) {
+                            cv::addWeighted(nn_confidence, 0.6, confidence, 0.4, 0,
+                                          confidence);
+                        }
+                    } catch (const std::exception& e) {
+                        RCLCPP_WARN(rclcpp::get_logger("StereoCamera"),
+                                    "ONNX 推理失败: %s", e.what());
+                    }
+                }
+
                 frame->depth_m = depth_m;
                 frame->confidence = confidence;
                 frame->disparity = disparity;
