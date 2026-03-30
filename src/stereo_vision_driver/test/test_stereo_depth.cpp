@@ -7,6 +7,10 @@
 #include "stereo_vision/stereo_depth.hpp"
 #include "stereo_vision/stereo_camera.hpp"
 
+using stereo_vision::SGBMDepthHelper;
+using stereo_vision::CalibrationData;
+using stereo_vision::SGBMParams;
+
 // ---- 测试辅助 ----
 static cv::Mat makeTestImage(int w, int h, int offset) {
     cv::Mat img(h, w, CV_8UC1);
@@ -34,7 +38,7 @@ static stereo_vision::CalibrationData makeTestCalib() {
 
 // ---- 测试：深度计算输出尺寸 ----
 TEST(SGBMDepth, OutputSizeMatchesInput) {
-    SGBMDepthHelper::Params params;
+    SGBMParams params;
     params.num_disparities = 128;
     params.block_size = 7;
     SGBMDepthHelper engine(params);
@@ -59,7 +63,7 @@ TEST(SGBMDepth, OutputSizeMatchesInput) {
 
 // ---- 测试：置信度阈值过滤 ----
 TEST(SGBMDepth, ConfidenceThreshold) {
-    SGBMDepthHelper::Params params;
+    SGBMParams params;
     params.num_disparities = 64;
     params.block_size = 5;
     params.min_confidence = 0.4f;
@@ -91,7 +95,7 @@ TEST(SGBMDepth, ConfidenceThreshold) {
 
 // ---- 测试：深度物理范围 ----
 TEST(SGBMDepth, DepthPhysicalRange) {
-    SGBMDepthHelper::Params params;
+    SGBMParams params;
     params.num_disparities = 128;
     SGBMDepthHelper engine(params);
 
@@ -114,7 +118,7 @@ TEST(SGBMDepth, DepthPhysicalRange) {
 
 // ---- 测试：IMU 运动补偿不崩溃 ----
 TEST(SGBMDepth, MotionCompensationNoCrash) {
-    SGBMDepthHelper::Params params;
+    SGBMParams params;
     params.num_disparities = 64;
     SGBMDepthHelper engine(params);
 
@@ -135,7 +139,7 @@ TEST(SGBMDepth, MotionCompensationNoCrash) {
 
 // ---- 测试：视差→深度 公式 ----
 TEST(SGBMDepth, DisparityToDepthFormula) {
-    SGBMDepthHelper::Params params;
+    SGBMParams params;
     params.num_disparities = 128;
     SGBMDepthHelper engine(params);
 

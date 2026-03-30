@@ -1,6 +1,7 @@
 // 硬件抽象层 — BMI088 IMU 驱动
 // imu_bmi088.cpp
 
+#include "stereo_vision/hardware/imu_bmi088.hpp"
 #include "stereo_vision/hardware/camera_types.hpp"
 
 #include <fcntl.h>
@@ -56,56 +57,6 @@ constexpr uint8_t ACC_CHIP_ID_VAL = 0x1E;  // BMI088加速度计ID
 constexpr uint8_t GYRO_CHIP_ID_VAL = 0x0F;  // BMI088陀螺仪ID
 
 }  // namespace BMI088Reg
-
-// ============================================================================
-// BMI088 IMU 驱动
-// ============================================================================
-class BMI088Driver {
-public:
-    BMI088Driver();
-    ~BMI088Driver();
-
-    /**
-     * @brief 打开 I2C 总线
-     * @param i2c_bus /dev/i2c-X 路径
-     * @param addr I2C地址 (ACC=0x18或0x19, GYRO=0x68或0x69)
-     */
-    bool open(const char* i2c_bus, uint8_t acc_addr, uint8_t gyro_addr);
-
-    /** @brief 初始化 IMU */
-    bool init();
-
-    /** @brief 读取 IMU 数据 */
-    bool read(IMURawData& data);
-
-    /** @brief 关闭设备 */
-    void close();
-
-    /** @brief 检查是否已打开 */
-    bool isOpen() const { return fd_ >= 0; }
-
-private:
-    // I2C 读写
-    bool writeReg(uint8_t addr, uint8_t reg, uint8_t value);
-    bool readReg(uint8_t addr, uint8_t reg, uint8_t* value);
-    bool readRegs(uint8_t addr, uint8_t reg, uint8_t* buffer, size_t len);
-
-    // 配置
-    bool configAccelerometer();
-    bool configGyroscope();
-
-    // 物理量转换
-    float gyroRawToDps(int16_t raw);
-    float accelRawToMg(int16_t raw);
-
-    int fd_ = -1;
-    uint8_t accel_addr_ = 0x18;
-    uint8_t gyro_addr_ = 0x68;
-
-    // 转换系数（初始化时从寄存器读取）
-    float gyro_lsb_dps_ = 16.384f;   // ±2000 dps
-    float accel_lsb_mg_ = 0.061f;    // ±16g
-};
 
 // --------------------------------------------------------------------------
 // 实现

@@ -82,6 +82,8 @@ public:
 
 private:
     SGBMParams params_;
+    struct SGBMDepthEngine;  // 前向声明（实现在 stereo_depth.cpp）
+    std::unique_ptr<SGBMDepthEngine> engine_;
 };
 
 }  // namespace stereo_vision

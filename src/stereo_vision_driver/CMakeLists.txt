@@ -7,7 +7,7 @@ endif()
 
 # ========== 选项 ==========
 option(ENABLE_NVMEDIA "启用 NVIDIA NvMedia CSI-2 捕获 (需要 DriveOS/JetPack SDK)" OFF)
-option(ENABLE_ONNXRUNTIME "启用 ONNXRuntime 置信度推理" ON)
+option(ENABLE_ONNXRUNTIME "启用 ONNXRuntime 置信度推理" OFF)
 
 # ========== 依赖 ----------
 find_package(ament_cmake_auto REQUIRED)
