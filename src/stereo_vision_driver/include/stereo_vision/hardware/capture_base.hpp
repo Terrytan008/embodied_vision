@@ -123,4 +123,16 @@ std::unique_ptr<CaptureDevice>
 createCaptureDevice(const DeviceConfig& config,
                     const std::string& preferred_backend = "auto");
 
+// ============================================================
+// BMI088 IMU 驱动（实现在 imu_bmi088.cpp）
+// ============================================================
+namespace stereo_vision::hardware {
+class BMI088Driver;
+}  // namespace stereo_vision::hardware
+
+namespace stereo_vision::hardware {
+/**
+ * @brief 获取平台信息（用于日志和诊断）
+ */
+std::string getPlatformInfo();
 }  // namespace stereo_vision::hardware

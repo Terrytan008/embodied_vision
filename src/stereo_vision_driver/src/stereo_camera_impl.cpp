@@ -147,9 +147,13 @@ public:
     std::thread calibrator_thread_;
     CalibrationData calib_;
 
+#ifdef ENABLE_ONNXRUNTIME
     // ---- ONNX 置信度推理（可选）----
     std::unique_ptr<ConfidenceInference> confidence_nn_;
     std::string onnx_model_path_;
+#else
+    std::string onnx_model_path_;
+#endif
 
     // ---- 设备配置 ----
     DeviceConfig hw_config_{};
@@ -187,16 +191,16 @@ public:
         }
 
         // ---- 初始化 SGBM 深度引擎 ----
-        SGBMDepthEngine::Params sgbm_params;
+        SGBMParams sgbm_params;
         sgbm_params.num_disparities = 128;
         sgbm_params.block_size = 7;
         sgbm_params.P1 = 8 * 7 * 7;
         sgbm_params.P2 = 32 * 7 * 7;
         sgbm_params.min_confidence = config.confidence_threshold;
         sgbm_params.uniqueness_ratio = 15;
-        sgbm_params.speckle_window_size = 100;
+        sgbm_params.speckle_window = 100;
         sgbm_params.speckle_range = 32;
-        sgbm_params.confidence_mode = SGBMDepthEngine::Params::ConfidenceMode::Combined;
+        sgbm_params.mode = SGBMParams::ConfidenceMode::Combined;
 
         depth_engine_owner_ = std::make_unique<SGBMDepthHelper>(sgbm_params);
         depth_engine_ = depth_engine_owner_.get();
@@ -262,7 +266,7 @@ public:
                         int w = left.width, h = left.height;
                         cv::Mat raw12(h, w, CV_16SC1);
                         parseRaw12(static_cast<const uint8_t*>(left.data),
-                                   left.length, w, h, raw12);
+                                   left.stride, w, h, raw12);
                         // 双线性Bayer demosaic (IMX678 RGGB)
                         cv::Mat bayer8;
                         debayerRGGG(raw12, bayer8);
@@ -282,7 +286,7 @@ public:
                         int w = right.width, h = right.height;
                         cv::Mat raw12(h, w, CV_16SC1);
                         parseRaw12(static_cast<const uint8_t*>(right.data),
-                                   right.length, w, h, raw12);
+                                   right.stride, w, h, raw12);
                         cv::Mat bayer8;
                         debayerRGGG(raw12, bayer8);
                         right_raw_ = bayer8.clone();
@@ -492,10 +496,9 @@ std::unique_ptr<StereoCamera>
 StereoCamera::create(const CameraConfig& config, void* node_base) {
     // 创建实例
     struct RealCamera : public StereoCamera {
-        Impl* impl_;
+        using StereoCamera::impl_;  // 继承基类的 impl_
 
-        explicit RealCamera(Impl* p) : impl_(p) {}
-        ~RealCamera() override { delete impl_; }
+        explicit RealCamera(Impl* p) { impl_.reset(p); }
 
         std::unique_ptr<FrameData> grabFrame(uint32_t timeout_ms) override {
             if (impl_->hw_config_.simulator_mode) {
@@ -607,6 +610,7 @@ StereoCamera::create(const CameraConfig& config, void* node_base) {
                 }
 
                 // ---- ONNX NN 置信度推理（可选，与 SGBM 置信度融合）----
+#ifdef ENABLE_ONNXRUNTIME
                 if (impl_->confidence_nn_) {
                     cv::Mat left_gray, right_gray;
                     if (left_raw.channels() == 3) {
@@ -629,6 +633,7 @@ StereoCamera::create(const CameraConfig& config, void* node_base) {
                                     "ONNX 推理失败: %s", e.what());
                     }
                 }
+#endif
 
                 frame->depth_m = depth_m;
                 frame->confidence = confidence;

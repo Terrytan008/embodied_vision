@@ -345,16 +345,16 @@ private:
         confidence.setTo(0.0f);
 
         switch (params_.confidence_mode) {
-            case Params::ConfidenceMode::LeftRightCheck:
+            case ConfidenceMode::LeftRightCheck:
                 confidenceLRCheck(left, right, disp_filtered, confidence);
                 break;
-            case Params::ConfidenceMode::MatchCost:
+            case ConfidenceMode::MatchCost:
                 confidenceMatchCost(left, disp_filtered, confidence);
                 break;
-            case Params::ConfidenceMode::SobelTexture:
+            case ConfidenceMode::SobelTexture:
                 confidenceSobel(left, disp_filtered, confidence);
                 break;
-            case Params::ConfidenceMode::Combined:
+            case ConfidenceMode::Combined:
             default:
                 confidenceCombined(left, right, disp_filtered, disparity, confidence);
                 break;

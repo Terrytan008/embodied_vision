@@ -249,6 +249,10 @@ protected:
     StereoCamera() = default;
     StereoCamera(const StereoCamera&) = delete;
     StereoCamera& operator=(const StereoCamera&) = delete;
+
+    // Pimpl forward declaration（实现类在 stereo_camera_impl.cpp 中定义）
+    class Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 // ============================================================
