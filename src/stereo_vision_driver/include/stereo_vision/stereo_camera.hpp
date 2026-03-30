@@ -37,6 +37,9 @@ struct CameraConfig {
     // --- 基线（默认使用标定值） ---
     std::optional<float> baseline_mm;
 
+    // --- ONNX 置信度模型路径（空=不使用 NN 推理）---
+    std::string onnx_model_path;
+
     // --- ROS2 发布配置 ---
     bool publish_left = true;
     bool publish_right = true;

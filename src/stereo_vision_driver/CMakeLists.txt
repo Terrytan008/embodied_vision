@@ -96,6 +96,36 @@ ament_auto_target_library(stereo_vision_core)
 if(BUILD_TESTING)
     find_package(ament_lint_auto REQUIRED)
     ament_lint_auto_find_test_dependencies()
+
+    # GTest 单元测试
+    find_package(GTest QUIET)
+    if(GTest_FOUND)
+        enable_testing()
+        add_executable(test_stereo_depth
+            test/test_stereo_depth.cpp
+            src/stereo_depth.cpp
+            src/stereo_camera_impl.cpp
+        )
+        target_include_directories(test_stereo_depth PRIVATE
+            include
+            include/stereo_vision
+            ${OpenCV_INCLUDE_DIRS}
+        )
+        target_link_libraries(test_stereo_depth
+            ${OpenCV_LIBS}
+            pthread
+            GTest::GTest
+            GTest::Main
+        )
+        ament_add_test(test_stereo_depth
+            GENERATE_RESULT_FOR_RETURN_CODE
+            COMMAND $<TARGET_FILE:test_stereo_depth>
+            ENV ${colcon_test_env}
+        )
+        message(STATUS "GTest 单元测试: 已启用")
+    else()
+        message(STATUS "GTest 未找到，跳过单元测试")
+    endif()
 endif()
 
 # ========== 安装 ----------

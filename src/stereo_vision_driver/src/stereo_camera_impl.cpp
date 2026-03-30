@@ -5,6 +5,9 @@
 #include "stereo_vision/hardware/capture_base.hpp"
 #include "stereo_vision/hardware/camera_types.hpp"
 #include "stereo_vision/stereo_depth.hpp"
+#ifdef ENABLE_ONNXRUNTIME
+#include "stereo_vision/confidence_onnx.hpp"
+#endif
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -142,7 +145,11 @@ public:
     // ---- 在线标定器 ----
     std::atomic<bool> calibrator_trigger_{false};
     std::thread calibrator_thread_;
-    CalibrationData calib_;"
+    CalibrationData calib_;
+
+    // ---- ONNX 置信度推理（可选）----
+    std::unique_ptr<ConfidenceInference> confidence_nn_;
+    std::string onnx_model_path_;"
 
     // ---- 设备配置 ----
     DeviceConfig hw_config_{};
@@ -194,6 +201,34 @@ public:
         depth_engine_owner_ = std::make_unique<SGBMDepthHelper>(sgbm_params);
         depth_engine_ = depth_engine_owner_.get();
         RCLCPP_INFO(rclcpp::get_logger("StereoCamera"), "SGBM 深度引擎已初始化");
+
+        // ---- ONNX 置信度推理（可选）----
+        onnx_model_path_ = config.onnx_model_path;
+#ifdef ENABLE_ONNXRUNTIME
+        if (!onnx_model_path_.empty()) {
+            ConfidenceInference::Config nn_cfg;
+            nn_cfg.model_path = onnx_model_path_;
+            nn_cfg.use_gpu = true;
+            confidence_nn_ = std::make_unique<ConfidenceInference>();
+            if (confidence_nn_->initialize(nn_cfg)) {
+                RCLCPP_INFO(rclcpp::get_logger("StereoCamera"),
+                            "ONNX 置信度模型已加载: %s", onnx_model_path_.c_str());
+            } else {
+                RCLCPP_WARN(rclcpp::get_logger("StereoCamera"),
+                            "ONNX 模型初始化失败，使用传统置信度");
+                confidence_nn_.reset();
+            }
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("StereoCamera"),
+                        "无 ONNX 模型，使用传统置信度估计");
+        }
+#else
+        if (!onnx_model_path_.empty()) {
+            RCLCPP_WARN(rclcpp::get_logger("StereoCamera"),
+                        "ONNXRuntime 未编译支持，忽略模型: %s",
+                        onnx_model_path_.c_str());
+        }
+#endif
 
         // ---- 创建左目录制设备（自动选择 V4L2 或 NvMedia）----
         capture_left_ = hardware::createCaptureDevice(hw_config_, "auto");

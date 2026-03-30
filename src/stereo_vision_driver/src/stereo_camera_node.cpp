@@ -8,6 +8,7 @@
 #include <sensor_msgs/msg/imu.hpp>
 #include <image_transport/image_transport.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <sstream>
 
 #include "stereo_vision/stereo_camera.hpp"
 
@@ -25,6 +26,7 @@ public:
         this->declare_parameter("depth_max_m", 10.0f);
         this->declare_parameter("exposure_mode", std::string("auto"));
         this->declare_parameter("hdr_mode", std::string("hdr_x2"));
+        this->declare_parameter("onnx_model_path", std::string(""));
 
         int publish_hz = this->get_parameter("publish_hz").as_int();
         float confidence_threshold =
@@ -50,6 +52,8 @@ public:
         std::string hdr_mode = this->get_parameter("hdr_mode").as_string();
         if (hdr_mode == "x4") config.hdr_mode = stereo_vision::CameraConfig::HdrMode::X4;
         else if (hdr_mode == "off") config.hdr_mode = stereo_vision::CameraConfig::HdrMode::Off;
+
+        config.onnx_model_path = this->get_parameter("onnx_model_path").as_string();
 
         // ---------- 创建设备 ----------
         camera_ = stereo_vision::StereoCamera::create(config, this);
@@ -84,10 +88,31 @@ public:
             "~/recalibrate",
             [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>&,
                    std::shared_ptr<std_srvs::srv::Trigger::Response>& response) {
-                RCLCPP_INFO(this->get_logger(), "触发在线标定重收敛...");
+                auto calib = camera_->getCalibration();
+                RCLCPP_INFO(this->get_logger(),
+                            "触发在线标定: baseline=%.2fmm conf=%.2f",
+                            calib.baseline_mm, calib.recalib_confidence);
                 camera_->triggerRecalibration();
                 response->success = true;
-                response->message = "重新标定已触发";
+                response->message = "在线标定已触发 (baseline=" +
+                    std::to_string(calib.baseline_mm) + "mm, conf=" +
+                    std::to_string(calib.recalib_confidence) + ")";
+            }
+        );
+
+        // ---------- 查询当前标定状态 ----------
+        srv_get_calib_ = this->create_service<std_srvs::srv::Trigger>(
+            "~/get_calibration",
+            [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>&,
+                   std::shared_ptr<std_srvs::srv::Trigger::Response>& response) {
+                auto calib = camera_->getCalibration();
+                std::ostringstream oss;
+                oss << "baseline=" << calib.baseline_mm << "mm "
+                    << "conf=" << calib.recalib_confidence << " "
+                    << "fx=" << calib.left_k[0] << " "
+                    << "cy=" << calib.left_k[5];
+                response->success = true;
+                response->message = oss.str();
             }
         );
     }
@@ -190,6 +215,7 @@ private:
 
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_recalib_;
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_get_calib_;
 };
 
 }  // namespace stereo_vision_driver
