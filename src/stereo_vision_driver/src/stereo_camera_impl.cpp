@@ -250,7 +250,7 @@ public:
 #endif
 
         // ---- 创建左目录制设备（自动选择 V4L2 或 NvMedia）----
-        capture_left_ = hardware::createCaptureDevice(hw_config_, "auto");
+        capture_left_ = createCaptureDevice(hw_config_, "auto");
         if (!capture_left_ || !capture_left_->open(hw_config_)) {
             RCLCPP_ERROR(rclcpp::get_logger("StereoCamera"),
                         "左目录制设备初始化失败");
@@ -262,7 +262,7 @@ public:
         }
 
         // ---- 创建右目录制设备 ----
-        capture_right_ = hardware::createCaptureDevice(hw_config_, "auto");
+        capture_right_ = createCaptureDevice(hw_config_, "auto");
         if (!capture_right_ || !capture_right_->open(hw_config_)) {
             RCLCPP_WARN(rclcpp::get_logger("StereoCamera"),
                         "右目录制设备初始化失败（单目模式继续）");
@@ -275,7 +275,7 @@ public:
         // 左目采集回调
         if (capture_left_) {
             capture_left_->startStreaming(
-                [this](const FrameBuffer& left, const FrameBuffer&, const IMURawData&) {
+                [this](const hardware::FrameBuffer& left, const hardware::FrameBuffer&, const hardware::IMURawData&) {
                     if (!left.empty() && running_.load()) {
                         std::lock_guard<std::mutex> lock(frame_mutex_);
                         int w = left.width, h = left.height;
@@ -295,7 +295,7 @@ public:
         // 右目采集回调
         if (capture_right_) {
             capture_right_->startStreaming(
-                [this](const FrameBuffer&, const FrameBuffer& right, const IMURawData&) {
+                [this](const hardware::FrameBuffer&, const hardware::FrameBuffer& right, const hardware::IMURawData&) {
                     if (!right.empty() && running_.load()) {
                         std::lock_guard<std::mutex> lock(frame_mutex_);
                         int w = right.width, h = right.height;
@@ -442,7 +442,7 @@ public:
         // 启动 IMU 轮询
         if (imu_) {
             imu_thread_ = std::thread([this]() {
-                IMURawData raw;
+                hardware::IMURawData raw;
                 while (running_.load()) {
                     if (imu_->read(raw)) {
                         std::lock_guard<std::mutex> lock(imu_mutex_);
