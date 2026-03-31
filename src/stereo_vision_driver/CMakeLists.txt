@@ -3,6 +3,8 @@ project(stereo_vision_driver)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options(-Wall -Wextra -Wpedantic -fPIC)
+    # GCC 13 + Ubuntu 24.04: 强制旧 C++11 ABI 避免 std::__throw_system_error 查找问题
+    add_compile_options(-D_GLIBCXX_USE_CXX11_ABI=1)
 endif()
 
 # ========== 选项 ==========
