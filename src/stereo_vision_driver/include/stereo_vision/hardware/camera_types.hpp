@@ -3,12 +3,20 @@
 
 #pragma once
 
+// 重要：标准库头文件必须在命名空间之外引入。
+// 否则 GCC 13 PSTL 会在 hardware::std {} 内触发，
+// 导致 using ::X 查找失败（::X 被解析为 hardware::std::X）。
 #include <cstdint>
 #include <cstring>
-#include <functional>
-#include <optional>
+#include <algorithm>    // for std::min
+#include <functional>    // for std::function (forward declared below)
+#include <optional>      // for std::optional (forward declared below)
 
 namespace stereo_vision::hardware {
+
+// Forward-declare std types (避免在命名空间内引入标准库)
+using std::function;
+using std::optional;
 
 // ============================================================
 // 通用像素格式
@@ -47,7 +55,8 @@ struct FrameBuffer {
     // 内存拷贝（安全）
     void copyTo(void* dst, size_t size) const {
         if (!empty() && dst) {
-            std::memcpy(dst, data, std::min(size, static_cast<size_t>(stride * height)));
+            // 使用全局 memcpy/min（C 库函数，不需要 std::）
+            ::memcpy(dst, data, (size < stride * height ? size : stride * height));
         }
     }
 };
