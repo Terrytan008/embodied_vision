@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +67,7 @@ jobs:
           python3 scripts/export_onnx.py --help 2>/dev/null && echo "export_onnx.py OK" || echo "export_onnx.py 有错误"
 
   python-lint:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Python Lint
