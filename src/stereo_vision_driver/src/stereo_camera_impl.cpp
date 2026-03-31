@@ -1,6 +1,42 @@
 // Embodied Vision — 双目视觉模组核心实现
 // stereo_camera_impl.cpp
+//
+// 重要：rclcpp 必须在所有自定义命名空间之外引入。
+// GCC 的 PSTL (any_of/partition_copy) 在实例化时会执行
+// `namespace std {}` 查找；如果此时处于 namespace hardware {}
+// 内，std::abs/pair 等会被错误解析为 hardware::std::XXX。
+// 因此 rclcpp 先在全局 scope 解析，然后才进入 stereo_vision/hardware。
 
+// 前向声明 hardware 命名空间的类型（避免 rclcpp 引用时找不到类型）
+namespace stereo_vision { namespace hardware {
+struct CameraConfig;
+struct IMUConfig;
+struct DeviceConfig;
+struct FrameBuffer;
+struct IMURawData;
+struct CSI2Config;
+struct SensorInfo;
+enum class DeviceState : uint32_t;
+enum class ErrorCode : uint32_t;
+}}  // namespace stereo_vision::hardware
+
+// 标准库头必须在自定义命名空间之外
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <cstring>
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <atomic>
+#include <functional>
+
+// ROS2 rclcpp（在全局 scope 解析 PSTL 模板）
+#include <rclcpp/rclcpp.hpp>
+
+// 自定义头文件（在 hardware 命名空间之后引入）
 #include "stereo_vision/stereo_camera.hpp"
 #include "stereo_vision/hardware/capture_base.hpp"
 #include "stereo_vision/hardware/camera_types.hpp"
@@ -9,32 +45,11 @@
 #include "stereo_vision/confidence_onnx.hpp"
 #endif
 
-#include <rclcpp/rclcpp.hpp>
-
-#include <chrono>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <cstring>
-
-// 强制使用全局 std，避免 ADL 将 std 解析为 stereo_vision::hardware::std
-using ::std::mutex;
-using ::std::thread;
-using ::std::condition_variable;
-using ::std::atomic;
-using ::std::unique_lock;
-using ::std::lock_guard;
-using ::std::chrono::steady_clock;
-using ::std::chrono::duration_cast;
-using ::std::chrono::milliseconds;
-using ::std::function;
-using ::std::unique_ptr;
-using ::std::make_unique;
-using ::std::string;
-using ::std::array;
-using ::std::optional;
-
+// 现在进入 stereo_vision 命名空间
 namespace stereo_vision {
+
+// 引入 hardware 命名空间（此时 rclcpp/PSTL 已完全解析完毕）
+using namespace hardware;
 
 // ============================================================
 // RAW12 解析 & Bayer demosaic 辅助

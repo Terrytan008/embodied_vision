@@ -8,19 +8,19 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安装 ROS2 Jazzy
+      - name: 安装 ROS2 Humble
         uses: ros-tooling/setup-ros@v0.7
         with:
-          required-ros-distributions: jazzy
+          required-ros-distributions: humble
 
       - name: 安装依赖
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/humble/setup.bash
           sudo apt update
           sudo apt install -y \
             python3-colcon-common-extensions \
@@ -33,12 +33,12 @@ jobs:
 
       - name: 构建
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/humble/setup.bash
           colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 
       - name: 运行测试
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/humble/setup.bash
           colcon test --merge-install \
             --event-handlers console_direct+ \
             --cmake-args -DCMAKE_BUILD_TYPE=Release \
@@ -47,7 +47,7 @@ jobs:
 
       - name: 运行 GTest 单元测试
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/humble/setup.bash
           # 直接运行测试可执行文件
           cd build/stereo_vision_driver
           if [ -f test/test_stereo_depth ]; then
@@ -60,14 +60,14 @@ jobs:
 
       - name: 构建并测试 stereo_vision_calibration
         run: |
-          source /opt/ros/jazzy/setup.bash
+          source /opt/ros/humble/setup.bash
           cd src/stereo_vision_calibration
           pip install opencv-python numpy torch --quiet
           python3 scripts/train_confidence.py --help 2>/dev/null && echo "train_confidence.py OK" || echo "train_confidence.py 有错误"
           python3 scripts/export_onnx.py --help 2>/dev/null && echo "export_onnx.py OK" || echo "export_onnx.py 有错误"
 
   python-lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - name: Python Lint
