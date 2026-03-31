@@ -17,6 +17,23 @@
 #include <condition_variable>
 #include <cstring>
 
+// 强制使用全局 std，避免 ADL 将 std 解析为 stereo_vision::hardware::std
+using ::std::mutex;
+using ::std::thread;
+using ::std::condition_variable;
+using ::std::atomic;
+using ::std::unique_lock;
+using ::std::lock_guard;
+using ::std::chrono::steady_clock;
+using ::std::chrono::duration_cast;
+using ::std::chrono::milliseconds;
+using ::std::function;
+using ::std::unique_ptr;
+using ::std::make_unique;
+using ::std::string;
+using ::std::array;
+using ::std::optional;
+
 namespace stereo_vision {
 
 // ============================================================

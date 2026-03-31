@@ -3,10 +3,24 @@
 
 #pragma once
 
-#include "camera_types.hpp"
+// 关键：必须在任何 hardware 命名空间打开之前，强制 PSTL 在全局 scope 解析。
+// 否则 GCC 13 的 PSTL any_of/partition_copy 等算法被实例化时，
+// 会在 namespace hardware {} 上下文中查找 std，导致 hardware::std 被误认为 std。
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
+
+// 前向声明 hardware 命名空间的类型（避免循环 include）
+namespace stereo_vision::hardware {
+struct DeviceConfig;
+struct FrameBuffer;
+struct IMURawData;
+class CaptureDevice;
+}  // namespace stereo_vision::hardware
+
+// 现在 camera_types 在 hardware 命名空间内展开（无 std include 污染）
+#include "camera_types.hpp"
 
 namespace stereo_vision::hardware {
 
