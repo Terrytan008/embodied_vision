@@ -3,20 +3,18 @@
 
 #pragma once
 
-// 重要：标准库头文件必须在命名空间之外引入。
-// 否则 GCC 13 PSTL 会在 hardware::std {} 内触发，
-// 导致 using ::X 查找失败（::X 被解析为 hardware::std::X）。
+// 重要：标准库头文件必须在 hardware 命名空间之外引入。
+// GCC 的 PSTL 在 rclcpp 头文件内实例化 std 算法时，
+// 若此时处于 namespace hardware {} 上下文，std::* 符号
+// 会错误解析为 hardware::std::*（在 hardware::std {} 内找不到）。
+// 因此所有标准库头必须在全局 scope（hardware 命名空间打开之前）引入。
 #include <cstdint>
 #include <cstring>
-#include <algorithm>    // for std::min
-#include <functional>    // for std::function (forward declared below)
-#include <optional>      // for std::optional (forward declared below)
+#include <algorithm>
+#include <functional>
+#include <optional>
 
 namespace stereo_vision::hardware {
-
-// Forward-declare std types (避免在命名空间内引入标准库)
-using std::function;
-using std::optional;
 
 // ============================================================
 // 通用像素格式
@@ -55,7 +53,6 @@ struct FrameBuffer {
     // 内存拷贝（安全）
     void copyTo(void* dst, size_t size) const {
         if (!empty() && dst) {
-            // 使用全局 memcpy/min（C 库函数，不需要 std::）
             ::memcpy(dst, data, (size < stride * height ? size : stride * height));
         }
     }

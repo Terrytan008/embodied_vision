@@ -1,26 +1,14 @@
 // Embodied Vision — 双目视觉模组核心实现
 // stereo_camera_impl.cpp
 //
-// 重要：rclcpp 必须在所有自定义命名空间之外引入。
-// GCC 的 PSTL (any_of/partition_copy) 在实例化时会执行
-// `namespace std {}` 查找；如果此时处于 namespace hardware {}
-// 内，std::abs/pair 等会被错误解析为 hardware::std::XXX。
-// 因此 rclcpp 先在全局 scope 解析，然后才进入 stereo_vision/hardware。
+// 命名空间策略（重要）：
+// 任何命名空间（包括 namespace hardware {}）都必须在所有标准库头之后才能打开。
+// GCC 的 PSTL 在 rclcpp 头文件内实例化 std 算法时，
+// 若此时处于 namespace hardware {} 上下文，std::* 符号会错误解析为 hardware::std::*。
+// 因此 rclcpp 和所有自定义头文件都在全局 scope include，
+// 然后才打开 stereo_vision/hardware 命名空间。
 
-// 前向声明 hardware 命名空间的类型（避免 rclcpp 引用时找不到类型）
-namespace stereo_vision { namespace hardware {
-struct CameraConfig;
-struct IMUConfig;
-struct DeviceConfig;
-struct FrameBuffer;
-struct IMURawData;
-struct CSI2Config;
-struct SensorInfo;
-enum class DeviceState : uint32_t;
-enum class ErrorCode : uint32_t;
-}}  // namespace stereo_vision::hardware
-
-// 标准库头必须在自定义命名空间之外
+// ============ 标准库头（在任何命名空间之外）============
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -28,15 +16,17 @@ enum class ErrorCode : uint32_t;
 #include <cstring>
 #include <cmath>
 #include <cstdint>
+#include <csignal>      // sig_atomic_t（必须在 hardware 命名空间前解析）
+#include <ratio>        // std::ratio（必须在 hardware 命名空间前解析）
 #include <memory>
 #include <string>
 #include <atomic>
 #include <functional>
 
-// ROS2 rclcpp（在全局 scope 解析 PSTL 模板）
+// ============ ROS2 rclcpp（全局 scope）============
 #include <rclcpp/rclcpp.hpp>
 
-// 自定义头文件（在 hardware 命名空间之后引入）
+// ============ 自定义头文件（全局 scope）============
 #include "stereo_vision/stereo_camera.hpp"
 #include "stereo_vision/hardware/capture_base.hpp"
 #include "stereo_vision/hardware/camera_types.hpp"
@@ -45,23 +35,18 @@ enum class ErrorCode : uint32_t;
 #include "stereo_vision/confidence_onnx.hpp"
 #endif
 
-// 现在进入 stereo_vision 命名空间
+// ============ 进入项目命名空间 ====================
 namespace stereo_vision {
 
-// 引入 hardware 命名空间（此时 rclcpp/PSTL 已完全解析完毕）
-using namespace hardware;
+// 注意：不使用 "using namespace hardware;"
+// hardware 命名空间的类型必须显式用 hardware:: 前缀引用。
 
 // ============================================================
 // RAW12 解析 & Bayer demosaic 辅助
 // ============================================================
-
-/**
- * @brief 解析 RAW12 打包格式（Sony IMX678 12-bit RAW，每像素12bit）
- *
- * RAW12 字节布局（两个像素为一组，共3字节）：
  *   Byte[2n+0]: pixel_n[11:8]  (高4位)
  *   Byte[2n+1]: pixel_n[7:0]   (低8位)
- *   Byte[2n+2]: pixel_{n+1}[3:0] << 4 | pixel_n[3:0]  ← 共享 nibble
+ *   Byte[2n+2]: pixel_{n+1}[3:0] << 4 | pixel_n[3:0]  (shared nibble) 共享 nibble
  */
 static void parseRaw12(const uint8_t* src, size_t len,
                        int w, int h, cv::Mat& out) {
