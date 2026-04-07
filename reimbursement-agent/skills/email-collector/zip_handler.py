@@ -55,12 +55,22 @@ def extract_from_zip(zip_path, output_dir, email_index):
             zip_name = Path(zip_path).name
             zip_type = classify_zip_type(zip_name)
 
+            # 从 ZIP 文件名提取车牌/票号（用于给内层文件命名）
+            if zip_type == '12306':
+                # 纯数字 ID，如 26119110001000363051_16.zip
+                m = re.match(r'^(\d+)', zip_name.replace('[1]', ''))
+                zip_plate = f"火车票_{m.group(1)[:10]}" if m else '火车票'
+            else:
+                # 中文车牌，如 粤BGF4860[1]_05.zip
+                m = re.match(r'([\u4e00-\u9fa5A-Z]{1,2}[A-Z0-9]{5,6})', zip_name)
+                zip_plate = m.group(1) if m else '未知车牌'
+
             for name in zf.namelist():
                 name_lower = name.lower()
                 if not name_lower.endswith(('.pdf', '.jpg', '.jpeg', '.png')):
                     continue
 
-                # ETC: 跳过 apply.pdf（按票据索引），只保留 trans.pdf（按行程索引）
+                # ETC: 跳过 apply.pdf，只保留 trans.pdf（按行程索引）
                 # 12306: 所有 PDF 都保留
                 if zip_type == 'ETC' and 'trans' not in name_lower and 'apply' in name_lower:
                     print(f"    跳过 apply.pdf: {name}")
@@ -69,15 +79,13 @@ def extract_from_zip(zip_path, output_dir, email_index):
                 data = zf.read(name)
                 safe_name = ' '.join(name.split()).replace('/', '_').replace('\\', '_')
 
-                # 根据类型确定输出文件名
+                # 优先从内层文件名提取票号/车牌，其次用外层 ZIP 文件名
                 if zip_type == '12306':
-                    # 从文件名提取车票 ID
-                    m = re.match(r'^(\d+)', clean_name)
-                    plate = f"火车票_{m.group(1)[:10]}" if m else '火车票'
+                    m = re.match(r'^(\d+)', safe_name)
+                    plate = f"火车票_{m.group(1)[:10]}" if m else zip_plate
                 else:
-                    # ETC: 匹配中文车牌号 (如 粤BGF4860)
                     m = re.match(r'([\u4e00-\u9fa5A-Z]{1,2}[A-Z0-9]{5,6})', safe_name)
-                    plate = m.group(1) if m else '未知车牌'
+                    plate = m.group(1) if m else zip_plate
 
                 month_str = extract_month_from_pdf(data)
                 out_name = f"{plate}_{month_str}_e{email_index:02d}.pdf"

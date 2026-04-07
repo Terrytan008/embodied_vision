@@ -7,6 +7,7 @@
 import sys
 import os
 import argparse
+import re
 import ssl
 import hashlib
 import urllib.request
@@ -50,8 +51,8 @@ def search_invoice_emails(mail):
     invoice_emails = []
     for eid in email_ids:
         try:
-            _, msg_data = mail.fetch(eid, '(BODY[HEADER.FIELDS (FROM SUBJECT)])')
-            if result != 'OK':
+            status, msg_data = mail.fetch(eid, '(BODY[HEADER.FIELDS (FROM SUBJECT)])')
+            if status != 'OK':
                 continue
             raw_header = msg_data[0][1].decode('utf-8', errors='ignore')
 
