@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""发票分类与汇总表生成脚本 v4 - 智能去重版 - 高级OCR"""
-import os, sys, argparse, re, subprocess
+"""发票分类与汇总表生成脚本 v5 - 智能去重版 - 高级OCR"""
+import os, sys, argparse, re, subprocess, hashlib, shutil
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
@@ -138,10 +138,13 @@ def is_no_invoice_code_file(fn, sig):
         return True
     # 没有发票代码的文件（sig[0]为空，且是境外票据特征）
     if not sig[0]:  # 没有发票代码
-        t = sig[1].lower() if sig[1] else ''  # date text
-        # USD/HKD 等外币，且没有发票号 → 大概率是境外网约车
-        if sig[2] and float(sig[2].replace(',','')) > 0:  # amount exists
-            return True
+        # sig[2] 是金额，需要安全解析
+        try:
+            amount = float(sig[2].replace(',', '')) if sig[2] else 0.0
+            if amount > 0:
+                return True
+        except (ValueError, AttributeError):
+            pass
     return False
 
 def extract_summary(text, fn, amount, currency):
@@ -153,7 +156,6 @@ def extract_summary(text, fn, amount, currency):
     
     # Uber / 境外网约车
     if 'uber' in fn_lower:
-        # 尝试从文本提取 Uber 合计金额
         m = re.search(r"总计\s*US\$\s*([\d,]+\.?\d*)", text)
         if m:
             try:
@@ -163,14 +165,13 @@ def extract_summary(text, fn, amount, currency):
         return f"Uber 运输服务 {amt_str}"
     
     # 铁路电子客票
-    if '铁路' in text or '火车票' in fn_lower:
+    elif '铁路' in text or '火车票' in fn_lower:
         m = re.search(r"电子客票.*?票价:￥?([\d,]+\.?\d*)", text, re.DOTALL)
         if m:
             try:
                 v = float(m.group(1).replace(",", ""))
                 return f"铁路电子客票 ¥{v:.2f}"
             except: pass
-        # 高铁
         m = re.search(r"高铁.*?票价:￥?([\d,]+\.?\d*)", text, re.DOTALL)
         if m:
             try:
@@ -180,7 +181,7 @@ def extract_summary(text, fn, amount, currency):
         return f"铁路客票 {amt_str}"
     
     # 机票/航空
-    if any(k in text for k in ["航空", "机票", "flight", "airline"]):
+    elif any(k in text for k in ["航空", "机票", "flight", "airline"]):
         m = re.search(r"票价:￥?([\d,]+\.?\d*)", text)
         if m:
             try:
@@ -190,11 +191,11 @@ def extract_summary(text, fn, amount, currency):
         return f"航空客票 {amt_str}"
     
     # 收费公路/ETC
-    if any(k in text for k in ["收费公路", "通行费", "etc"]):
+    elif any(k in text for k in ["收费公路", "通行费", "etc"]):
         return f"收费公路通行费 {amt_str}"
     
     # 汽油
-    if '汽油' in text or '加油' in fn_lower:
+    elif '汽油' in text or '加油' in fn_lower:
         m = re.search(r"\*汽油\*([^\n]+?)\s*\n", text)
         if m:
             name = re.sub(r'\s+', '', m.group(1))
@@ -202,31 +203,31 @@ def extract_summary(text, fn, amount, currency):
         return f"汽油费 {amt_str}"
     
     # 停车费
-    if '停车' in text or '停车费' in fn_lower:
+    elif '停车' in text or '停车费' in fn_lower:
         return f"停车费 {amt_str}"
     
     # 充电
-    if '充电' in text or '充电桩' in fn_lower:
+    elif '充电' in text or '充电桩' in fn_lower:
         return f"充电电费 {amt_str}"
     
     # 滴滴/高德网约车
-    if any(k in fn_lower for k in ['滴滴', '高德', '阳光出行']) and '电子发票' in fn_lower:
+    elif any(k in fn_lower for k in ['滴滴', '高德', '阳光出行']) and '电子发票' in fn_lower:
         return f"运输服务 {amt_str}"
     
     # 酒店
-    if any(k in text for k in ["入住", "Hotel", "住宿费", "房费"]):
+    elif any(k in text for k in ["入住", "Hotel", "住宿费", "房费"]):
         return f"酒店住宿费 {amt_str}"
     
     # 餐饮
-    if any(k in text for k in ["餐费", "餐饮服务", "餐饮"]):
+    elif any(k in text for k in ["餐费", "餐饮服务", "餐饮"]):
         return f"餐饮费 {amt_str}"
     
     # 船票
-    if '船票' in fn_lower or '海天码头' in text:
+    elif '船票' in fn_lower or '海天码头' in text:
         return f"船票 {amt_str}"
     
     # 办公用品 / 立创
-    if '办公' in fn_lower or '立创' in fn_lower:
+    elif '办公' in fn_lower or '立创' in fn_lower:
         m = re.search(r"项目名称\s+\*([^*\n]+)", text)
         if m:
             name = re.sub(r'\s+', '', m.group(1))
@@ -234,14 +235,12 @@ def extract_summary(text, fn, amount, currency):
         return f"办公用品 {amt_str}"
     
     # 项目名称提取（通用）
-    m = re.search(r"项目名称\s+\*([^*\n]+)", text)
-    if m:
+    elif (m := re.search(r"项目名称\s+\*([^*\n]+)", text)):
         name = re.sub(r'\s+', '', m.group(1))
         return f"{name[:20]} {amt_str}"
     
     # 发票代码作名称
-    m = re.search(r"发票代码[：:]?\s*([0-9A-Z]{10,20})", text)
-    if m:
+    elif (m := re.search(r"发票代码[：:]?\s*([0-9A-Z]{10,20})", text)):
         return f"发票_{m.group(1)[-8:]} {amt_str}"
     
     return amt_str
@@ -294,11 +293,9 @@ def scan_and_extract(fp):
     if ADVANCED_OCR:
         amount, currency = ocr_extract_amount(text)
         date = ocr_extract_date(text) or ''
-        invoice_number = ocr_extract_invoice_number(text) or ''
     else:
         amount, currency = extract_amount(text)
         date = ''
-        invoice_number = ''
     sig = extract_invoice_sig(text) if amount > 0 else ("", "", "")
     if not date:
         m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
@@ -400,12 +397,13 @@ def main():
     invoices = []
     seen_sigs = set()
     seen_content_hashes = {}  # hash -> filename, for cross-file dedup
-    dup_count = 0
+    skipped_itinerary = 0  # 行程单（排除）
+    skipped_dup_sig = 0    # 发票签名重复
+    skipped_dup_hash = 0   # 文件内容哈希重复
     for i, fp in enumerate(files, 1):
         print(f"\n[{i}/{len(files)}] {os.path.basename(fp)}")
         
         # 计算文件内容哈希
-        import hashlib
         with open(fp, 'rb') as f:
             content_hash = hashlib.md5(f.read()).hexdigest()
         
@@ -414,7 +412,7 @@ def main():
         # 跳过行程单（行程报销单/电子行程单），只保留发票
         if is_itinerary_not_invoice(info["name"], info.get("text", "")):
             print(f"  ⊝ 行程单（不纳入汇总表）")
-            dup_count += 1
+            skipped_itinerary += 1
             continue
         
         sig_key = "|".join(str(x) for x in info["sig"])
@@ -427,16 +425,15 @@ def main():
         if use_sig_dedup:
             # 有发票代码 → 用签名去重
             if sig_key in seen_sigs:
-                print(f"  重复发票（{info['sig'][0][:15] if info['sig'][0] else 'N/A'} | {info['sig'][1]} | {info['sig'][2]}）")
-                dup_count += 1
+                print(f"  ⊝ 重复发票（{info['sig'][0][:15] if info['sig'][0] else 'N/A'} | {info['sig'][1]} | {info['sig'][2]}）")
+                skipped_dup_sig += 1
                 continue
             seen_sigs.add(sig_key)
         
         # 检查内容哈希去重（文件名不同但内容相同）
         if content_hash in seen_content_hashes:
-            dup_desc = f"sig去重({info['sig'][0][:12] if use_sig_dedup and info['sig'][0] else 'N/A'})" if use_sig_dedup else "MD5去重"
             print(f"  ⊝ 内容完全相同（已存在为: {seen_content_hashes[content_hash]}）")
-            dup_count += 1
+            skipped_dup_hash += 1
             continue
         seen_content_hashes[content_hash] = os.path.basename(fp)
         
@@ -456,7 +453,6 @@ def main():
         dest = base / category / new_name
         if dest.exists():
             # 同名文件已存在，比较内容哈希
-            import hashlib
             with open(fp, 'rb') as f1:
                 new_hash = hashlib.md5(f1.read()).hexdigest()
             with open(dest, 'rb') as f2:
@@ -473,11 +469,14 @@ def main():
                     suffix += 1
                 print(f"    ⚠️ 同名不同内容，添加后缀: {new_name}")
         try:
-            import shutil
             shutil.copy2(fp, dest)
         except: pass
         invoices.append(info)
-    print(f"\n完成！处理 {len(files)} 个文件，去重 {dup_count} 个")
+    print(f"\n完成！处理 {len(files)} 个文件")
+    print(f"  行程单排除: {skipped_itinerary} 个")
+    print(f"  发票签名重复: {skipped_dup_sig} 个")
+    print(f"  内容哈希重复: {skipped_dup_hash} 个")
+    print(f"  入汇总表: {len(invoices)} 个")
     out_excel = base / "发票汇总表.xlsx"
     totals = gen_excel(invoices, str(out_excel))
     cs = {"CNY": "¥", "USD": "US$", "HKD": "HK$"}
