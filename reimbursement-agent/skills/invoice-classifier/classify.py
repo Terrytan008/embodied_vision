@@ -15,7 +15,7 @@ except ImportError:
 
 CATEGORIES = {
     "交通出行": ["交通", "出行", "打车", "滴滴", "出租车", "火车票", "机票", "航空", "地铁", "公交", "高速", "ETC", "汽油", "充电", "uber", "didi", "高德", "行程", "停车费", "过路费", "船票", "船运", "阳光出行"],
-    "餐饮美食": ["餐饮", "餐费", "餐服务", "饭店", "餐厅", "午餐", "晚餐", "美食", "外卖", "奶茶", "咖啡", "酒楼"],
+    "餐饮招待": ["餐饮", "餐费", "餐服务", "饭店", "餐厅", "午餐", "晚餐", "美食", "外卖", "奶茶", "咖啡", "酒楼"],
     "办公用品": ["办公", "文具", "打印", "耗材", "电脑", "设备", "配件", "办公用品", "纸张", "墨盒", "office", "半导体", "电子元件", "立创"],
     "酒店住宿": ["酒店", "住宿", "宾馆", "旅馆", "民宿", "房费", "hotel", "inn", "room"],
 }
@@ -146,6 +146,44 @@ def is_no_invoice_code_file(fn, sig):
         except (ValueError, AttributeError):
             pass
     return False
+
+def truncate_to_suffix(name):
+    """在公司/酒楼等后缀词处截断"""
+    for suffix in ['有限公司', '酒楼', '饭店', '餐厅', '酒店', '宾馆', '商行']:
+        idx = name.find(suffix)
+        if idx >= 0:
+            return name[:idx + len(suffix)]
+    return name[:20]
+
+
+def extract_seller(text):
+    """从发票文本提取销售方名称（用于餐饮招待明细）"""
+    text_nl = text.replace('\n', '')
+    # 找所有『称：XXX公司/酒楼/...』候选项
+    candidates = []
+    for m in re.finditer(r'称：([^\n（()]{3,80})', text_nl):
+        name_raw = m.group(1).strip()
+        # 只保留中文字符
+        name = ''.join(c for c in name_raw if '\u4e00' <= c <= '\u9fff')
+        if len(name) >= 4:
+            candidates.append((m.start(), name))
+    if not candidates:
+        return ''
+    if len(candidates) == 1:
+        return truncate_to_suffix(candidates[0][1])
+    # 多个候选项：找离『销』最近的（而非『购』最近的）
+    # 用 BEFORE 该称位置的最末 销/购 来判断
+    best, best_dist = None, 9999
+    for pos, name in candidates:
+        before = text_nl[:pos]
+        last_销 = before.rfind('销')
+        last_购 = before.rfind('购')
+        d_销 = pos - last_销 if last_销 >= 0 else 9999
+        d_购 = pos - last_购 if last_购 >= 0 else 9999
+        # 找离『销』更近的（排除『购』更近的情况）
+        if d_销 < d_购 and d_销 < best_dist:
+            best_dist, best = d_销, name
+    return truncate_to_suffix(best) if best else truncate_to_suffix(candidates[-1][1])
 
 def extract_summary(text, fn, amount, currency):
     """从PDF文本提取『项目名称 + 金额』干净摘要"""
@@ -300,7 +338,7 @@ def scan_and_extract(fp):
     if not date:
         m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", text)
         date = f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}" if m else datetime.now().strftime("%Y-%m-%d")
-    return {"path": fp, "name": fn, "category": classify(text, fn), "amount": amount, "currency": currency, "date": date, "text": text, "sig": sig}
+    return {"path": fp, "name": fn, "category": classify(text, fn), "amount": amount, "currency": currency, "date": date, "text": text, "sig": sig, "seller": extract_seller(text)}
 
 def scan_dir(d):
     r = []
@@ -374,6 +412,40 @@ def gen_excel(invoices, out_path):
     ws.column_dimensions["E"].width = 15
     ws.column_dimensions["F"].width = 10
     ws.column_dimensions["G"].width = 35
+
+    # ── 餐饮招待明细分页 ──
+    dining = [inv for inv in invoices if '餐饮' in inv.get('category', '')]
+    if dining:
+        from openpyxl.styles import Border, Side
+        from openpyxl.utils import get_column_letter
+        hf2 = Font(bold=True, color='FFFFFF', size=11)
+        hl2 = PatternFill(start_color='1E3A5F', fill_type='solid')
+        ha2 = Alignment(horizontal='center', vertical='center')
+        thin2 = Side(style='thin')
+        tb2 = Border(left=thin2, right=thin2, top=thin2, bottom=thin2)
+        fill_yellow = PatternFill(start_color='FFF9E6', fill_type='solid')
+
+        ws2 = wb.create_sheet('餐饮招待明细')
+        headers2 = ['序号', '销售方', '日期', '金额(元)', '招待人', '招待目的', '文件名']
+        col_widths2 = [6, 35, 14, 12, 15, 25, 55]
+        for col, (h, w) in enumerate(zip(headers2, col_widths2), 1):
+            c = ws2.cell(1, col, h)
+            c.font, c.fill, c.alignment, c.border = hf2, hl2, ha2, tb2
+            ws2.column_dimensions[get_column_letter(col)].width = w
+
+        for i, inv in enumerate(dining, 1):
+            r = i + 1
+            vals = [i, inv.get('seller', ''), inv.get('date', ''), float(inv['amount']), '', '', inv['name']]
+            for col, val in enumerate(vals, 1):
+                c = ws2.cell(r, col, val)
+                c.alignment = Alignment(horizontal='center' if col in [1, 3, 4] else 'left', vertical='center')
+                c.border = tb2
+                if col == 4:
+                    c.number_format = '#,##0.00'
+            for col in [5, 6]:  # 招待人、招待目的 → 标黄待填
+                ws2.cell(r, col).fill = fill_yellow
+        ws2.freeze_panes = 'A2'
+
     wb.save(out_path)
     return crt
 
